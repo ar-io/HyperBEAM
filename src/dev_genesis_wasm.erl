@@ -96,7 +96,7 @@ ensure_started(Opts) ->
                     ),
                 case filelib:is_dir(DevPath) of
                     true -> DevPath;
-                    false -> filename:join([Cwd, "genesis-wasm-server"]) % Fallback
+                    false -> filename:join([Cwd, "_build/genesis-wasm-server"]) % Fallback
                 end
         end,
     ?event({ensure_started, genesis_wasm_server_dir, GenesisWasmServerDir}),
@@ -196,7 +196,16 @@ ensure_started(Opts) ->
                                                 )
                                             },
 											{"DISABLE_PROCESS_FILE_CHECKPOINT_CREATION", "false"},
-											{"PROCESS_MEMORY_FILE_CHECKPOINTS_DIR", CheckpointDir}
+											{"PROCESS_MEMORY_FILE_CHECKPOINTS_DIR", CheckpointDir},
+                                            {"PROCESS_WASM_MEMORY_MAX_LIMIT",
+                                                integer_to_list(
+                                                    hb_opts:get(
+                                                        genesis_wasm_memory_max_limit,
+                                                        17179869184, %% 16GB
+                                                        Opts
+                                                    )
+                                                )
+                                            }  
                                         ]
                                     }
                                 ]
