@@ -229,7 +229,7 @@ ensure_started(Opts) ->
                                                 hb_util:list(
                                                     hb_opts:get(
                                                         genesis_wasm_memory_cache_max_size,
-                                                        "12_000_000_000",
+                                                        17179869184, %% 16GB
                                                         Opts
                                                     )
                                                 )
