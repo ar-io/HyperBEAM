@@ -277,7 +277,7 @@ start_http3(ServerID, ProtoOpts, NodeMsg) ->
         end),
     receive {ok, Port} -> {ok, Port, ServerPID}
     after 2000 ->
-        {error, {timeout, staring_http3_server, ServerID}}
+        {error, {timeout, starting_http3_server, ServerID}}
     end.
 
 http3_conn_sup_loop() ->
