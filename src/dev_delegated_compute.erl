@@ -32,7 +32,7 @@ compute(Msg1, Msg2, Opts) ->
     ?event({doing_delegated_compute, {msg2, Msg2}, {type, Type}}),
     % Execute the compute via external CU
     case Type of
-        Assignment when Assignment =:= <<"assignment">>; Assignment =:= <<"Assignment">> ->
+        <<"Assignment">> ->
             Slot = hb_ao:get(<<"slot">>, Msg2, Opts),
             Res = do_compute(ProcessID, Msg2, Opts);
         _ ->
