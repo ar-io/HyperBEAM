@@ -646,14 +646,16 @@ set_opts_test() ->
     ?assert(Key3 == <<"world3">>).
 
 restart_server_test() ->
+    % We force HTTP2, overriding the HTTP3 feature, because HTTP3 restarts don't work yet.
     Wallet = ar_wallet:new(),
     BaseOpts = #{
         <<"test-key">> => <<"server-1">>,
-        priv_wallet => Wallet
+        priv_wallet => Wallet,
+        protocol => http2
     },
     _ = start_node(BaseOpts),
     N2 = start_node(BaseOpts#{ <<"test-key">> => <<"server-2">> }),
     ?assertEqual(
         {ok, <<"server-2">>},
-        hb_http:get(N2, <<"/~meta@1.0/info/test-key">>, #{})
+        hb_http:get(N2, <<"/~meta@1.0/info/test-key">>, #{protocol => http2})
     ).
