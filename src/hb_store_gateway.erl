@@ -328,29 +328,42 @@ remote_hyperbeam_node_ans104_test() ->
     {ok, ID} = hb_cache:write(Msg, ServerOpts),
     {ok, ReadMsg} = hb_cache:read(ID, ServerOpts),
     ?assert(hb_message:verify(ReadMsg)),
+    LocalStore = hb_test_utils:test_store(),
     ClientOpts =
         #{
             store =>
                 [
                     #{
                         <<"store-module">> => hb_store_gateway,
-                        <<"node">> => Server
-                    },
-                    hb_test_utils:test_store()
-                ],
-            routes => [
-                #{
-                    % Routes for GraphQL requests to use the remote server's
-                    % GraphQL API.
-                    <<"template">> => <<"/graphql">>,
-                    <<"nodes">> =>
-                        [
+                        <<"node">> => Server,
+                        <<"local-store">> => [LocalStore],
+                        routes => [
                             #{
-                                <<"prefix">> => <<Server/binary, "/~query@1.0">>
+                                % Routes for GraphQL requests to use the remote
+                                % server's GraphQL API.
+                                <<"template">> => <<"/graphql">>,
+                                <<"nodes">> =>
+                                    [
+                                        #{
+                                            <<"prefix">> =>
+                                                <<Server/binary, "/~query@1.0">>
+                                        }
+                                    ]
+                            },
+                            #{
+                                <<"template">> => <<"/raw">>,
+                                <<"nodes">> =>
+                                    [
+                                        #{
+                                            <<"match">> => <<"^/raw">>,
+                                            <<"with">> => Server
+                                        }
+                                    ]
                             }
                         ]
-                }
-            ]
+                    },
+                    LocalStore
+                ]
         },
     {ok, Msg2} = hb_cache:read(ID, ClientOpts),
     ?assert(hb_message:verify(Msg2)),
