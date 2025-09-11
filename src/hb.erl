@@ -124,16 +124,20 @@ start_mainnet(Opts) ->
         FinalOpts =
             BaseOpts#{
                 store => #{ <<"store-module">> => hb_store_fs, <<"name">> => <<"cache-mainnet">> },
-                priv_wallet => Wallet
+                priv_wallet => Wallet,
+                name_resolvers => [
+                    dev_arns_resolver:resolver(<<"https://arweave.net">>)
+                ]
             }
     ),
+    
     Address =
         case hb_opts:get(address, no_address, FinalOpts) of
             no_address -> <<"[ !!! no-address !!! ]">>;
             Addr -> Addr
         end,
     io:format(
-        "Started mainnet node at http://localhost:~p~n"
+        "Started mainnet node with ARNS resolver at http://localhost:~p~n"
         "Operator: ~s~n",
         [hb_maps:get(port, Opts, undefined, Opts), Address]
     ),
