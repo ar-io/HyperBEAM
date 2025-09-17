@@ -617,12 +617,14 @@ read_resolved({link, ID, LinkOpts}, Req, Opts) ->
 read_resolved(BaseMsgID, Req = #{ <<"path">> := Key }, Opts) when ?IS_ID(BaseMsgID) ->
     ?event(read_cached, {attempting_read_resolved, {base_msg, BaseMsgID}, {req, Req}}),
     Store = hb_opts:get(store, no_viable_store, Opts),
+    NormKey = hb_ao:normalize_key(Key, Opts),
     DevPath = hb_store:resolve(Store, [BaseMsgID, <<"device">>]),
-    case is_direct_access_message(hb_store:read(Store, DevPath), Key, Opts) of
+    case is_direct_access_message(hb_store:read(Store, DevPath), NormKey, Opts) of
         false ->
             ?event(read_cached,
                 {found_non_message_device,
-                    {path, DevPath}
+                    {path, DevPath},
+                    {key, NormKey}
                 }
             ),
             read_hashpath(BaseMsgID, Req, Opts);
@@ -635,7 +637,7 @@ read_resolved(BaseMsgID, Req = #{ <<"path">> := Key }, Opts) when ?IS_ID(BaseMsg
             ?event(read_cached,
                 {skipping_execution_store_lookup,
                     {base_msg, BaseMsgID},
-                    {req, Req}
+                    {key, NormKey}
                 }
             ),
             KeyPath = hb_store:resolve(Store, [BaseMsgID, Key]),
@@ -644,30 +646,32 @@ read_resolved(BaseMsgID, Req = #{ <<"path">> := Key }, Opts) when ?IS_ID(BaseMsg
 read_resolved(BaseMsg, Req = #{ <<"path">> := Key }, Opts) when is_map(BaseMsg) ->
     % The base message is loaded, so we determine if it has an explicit device
     % and perform a direct lookup if it does not.
-    case is_direct_access_message(hb_maps:find(<<"device">>, BaseMsg, Opts), Key, Opts) of
+    DevRes = hb_maps:find(<<"device">>, BaseMsg, Opts),
+    NormKey = hb_ao:normalize_key(Key, Opts),
+    case is_direct_access_message(DevRes, NormKey, Opts) of
         false -> read_hashpath(BaseMsg, Req, Opts);
         true ->
             ?event(read_cached,
                 {skip_execution_memory_lookup,
-                    {base_keys, maps:size(BaseMsg)},
-                    {path, Key}
+                    {device, DevRes},
+                    {path, NormKey}
                 }
             ),
-            {hit, read_in_memory_key(BaseMsg, Key, Opts)}
+            {hit, read_in_memory_key(BaseMsg, NormKey, Opts)}
     end;
 read_resolved(Base, Req, Opts) ->
     read_hashpath(Base, Req, Opts).
 
 %% @doc Return a key from an in-memory message, returning the same form as
 %% a store read (`{Status, Value}').
-read_in_memory_key(BaseMsg, Key, _Opts) ->
+read_in_memory_key(BaseMsg, NormKey, _Opts) ->
     % For now, just wrap maps:find.
-    case maps:find(Key, BaseMsg) of
+    case maps:find(NormKey, BaseMsg) of
         error ->
-            ?event(read_cached, {key_not_found, {key, Key}}),
-            {error, not_found};
+            ?event(read_cached, {key_not_found, {key, NormKey}}),
+            not_found;
         {ok, Value} ->
-            ?event(read_cached, {key_found, {key, Key}, {value, Value}}),
+            ?event(read_cached, {key_found, {key, NormKey}, {value, Value}}),
             {ok, Value}
     end.
 
@@ -675,17 +679,17 @@ read_in_memory_key(BaseMsg, Key, _Opts) ->
 %% in the message's Erlang map representation, will it always be returned?
 is_direct_access_message({_Status, DevRes}, Key, Opts) ->
     is_direct_access_message(DevRes, Key, Opts);
-is_direct_access_message(not_found, _, _) ->
-    true;
-is_direct_access_message(error, _, _) ->
-    true;
-is_direct_access_message(<<"message@1.0">>, _, _) ->
-    true;
-is_direct_access_message(DevName, Key, Opts) ->
+is_direct_access_message(not_found, Key, Opts) ->
+    is_direct_access_message(<<"message@1.0">>, Key, Opts);
+is_direct_access_message(error, Key, Opts) ->
+    is_direct_access_message(<<"message@1.0">>, Key, Opts);
+is_direct_access_message(<<"message@1.0">>, Key, Opts) ->
+    not lists:member(Key, [<<"id">>, <<"set">>, <<"get">>, <<"commit">>, <<"committers">>]);
+is_direct_access_message(DevName, NormKey, Opts) ->
     ?event(read_cached, {calculating_info, {device, DevName}}),
     case hb_ao:info(#{ <<"device">> => DevName }, Opts) of
         Info = #{ exports := Exports } when not is_map_key(handler, Info) ->
-            not lists:member(Key, Exports);
+            not lists:member(NormKey, Exports);
         _ ->
             false
     end;
