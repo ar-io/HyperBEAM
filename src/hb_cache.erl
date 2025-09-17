@@ -671,7 +671,8 @@ read_in_memory_key(BaseMsg, Key, _Opts) ->
             {ok, Value}
     end.
 
-%% @doc Determine if a device is a direct access device.
+%% @doc Determine if a device is a `direct access': If there is a literal key
+%% in the message's Erlang map representation, will it always be returned?
 is_direct_access_message({_Status, DevRes}, Key, Opts) ->
     is_direct_access_message(DevRes, Key, Opts);
 is_direct_access_message(not_found, _, _) ->
@@ -684,10 +685,8 @@ is_direct_access_message(DevName, Key, Opts) ->
     ?event(read_cached, {calculating_info, {device, DevName}}),
     case hb_ao:info(#{ <<"device">> => DevName }, Opts) of
         Info = #{ exports := Exports } when not is_map_key(handler, Info) ->
-            ?event(read_cached, {testing_is_exported, {device, DevName}, {exports, Exports}}),
             not lists:member(Key, Exports);
-        Res ->
-            ?event(read_cached, {direct_access_message_not_found, {device, DevName}, {info, Res}}),
+        _ ->
             false
     end;
 is_direct_access_message(_, _, _) ->
