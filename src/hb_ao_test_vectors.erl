@@ -13,7 +13,8 @@
 %% `rebar3 eunit --test hb_ao_test_vectors:run_test'
 %% Comment/uncomment out as necessary.
 run_test() ->
-    multiple_as_subresolutions_test(#{}).
+    hb_test_utils:run(resolve_id, normal, test_suite(), test_opts()),
+    hb_test_utils:run(resolve_id, only_if_cached, test_suite(), test_opts()).
 
 %% @doc Run each test in the file with each set of options. Start and reset
 %% the store for each test.
@@ -262,7 +263,7 @@ resolve_simple_test(Opts) ->
 resolve_id_test(Opts) ->
     ?assertMatch(
         ID when byte_size(ID) == 43,
-        hb_ao:get(id, #{ test_key => <<"1">> }, Opts)
+        hb_ao:get(<<"id">>, #{ <<"test_key">> => <<"1">> }, Opts)
     ).
 
 resolve_key_twice_test(Opts) ->
