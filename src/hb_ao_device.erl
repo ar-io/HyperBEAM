@@ -7,6 +7,20 @@
 -export([find_exported_function/5, is_exported/4, info/2, info/3, default/0]).
 -include("include/hb.hrl").
 
+%%% All keys in the `message@1.0` device that are not resolved to underlying
+%%% data in the their Erlang map representations.
+-define(MESSAGE_KEYS, [
+    <<"get">>,
+    <<"set">>,
+    <<"remove">>,
+    <<"keys">>,
+    <<"id">>,
+    <<"commit">>,
+    <<"verify">>,
+    <<"committers">>,
+    <<"committed">>
+]).
+
 %% @doc Truncate the arguments of a function to the number of arguments it
 %% actually takes.
 truncate_args(Fun, Args) ->
@@ -380,25 +394,12 @@ is_direct_key_access(not_found, Key, Opts) ->
 is_direct_key_access(error, Key, Opts) ->
     is_direct_key_access(<<"message@1.0">>, Key, Opts);
 is_direct_key_access(<<"message@1.0">>, Key, _Opts) ->
-    not lists:member(
-        Key,
-        [
-            <<"get">>,
-            <<"set">>,
-            <<"remove">>,
-            <<"keys">>,
-            <<"id">>,
-            <<"commit">>,
-            <<"verify">>,
-            <<"committers">>,
-            <<"committed">>
-        ]
-    );
+    not lists:member(Key, ?MESSAGE_KEYS);
 is_direct_key_access(Dev, NormKey, Opts) ->
     ?event(read_cached, {calculating_info, {device, Dev}}),
     case info(#{ <<"device">> => Dev}, Opts) of
         Info = #{ exports := Exports } when not is_map_key(handler, Info) ->
-            not lists:member(NormKey, Exports);
+            not lists:member(NormKey, Exports ++ ?MESSAGE_KEYS);
         _ -> false
     end;
 is_direct_key_access(_, _, _) ->
