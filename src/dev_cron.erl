@@ -7,7 +7,7 @@
 
 %% @doc Exported function for getting device info.
 info(_) -> 
-	#{ exports => [info, once, every, stop] }.
+	#{ exports => [<<"info">>, <<"once">>, <<"every">>, <<"stop">>] }.
 
 info(_Msg1, _Msg2, _Opts) ->
 	InfoBody = #{
