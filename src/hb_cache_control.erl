@@ -51,12 +51,7 @@ lookup(Msg1, Msg2, Opts) ->
             ?event({skip_cache_check, lookup_disabled}),
             {continue, Msg1, Msg2};
         Settings = #{ <<"lookup">> := true } ->
-            OutputScopedOpts = 
-                hb_store:scope(
-                    Opts,
-                    hb_opts:get(store_scope_resolved, local, Opts)
-                ),
-            case hb_cache:read_resolved(Msg1, Msg2, OutputScopedOpts) of
+            case hb_cache:read_resolved(Msg1, Msg2, Opts) of
                 {hit, not_found} ->
                     {error, not_found};
                 {hit, {ok, Res}} ->
