@@ -395,9 +395,9 @@ store_read(_Path, no_viable_store, _) ->
     not_found;
 store_read(Path, Store, Opts) ->
     ResolvedFullPath = hb_store:resolve(Store, PathBin = hb_path:to_binary(Path)),
-    ?event({read_resolved,
+    ?event({reading,
         {original_path, {string, PathBin}},
-        {resolved_path, ResolvedFullPath},
+        {fully_resolved_path, ResolvedFullPath},
         {store, Store}
     }),
     case hb_store:type(Store, ResolvedFullPath) of
@@ -619,13 +619,15 @@ read_resolved(BaseMsgID, Req = #{ <<"path">> := Key }, Opts) when ?IS_ID(BaseMsg
     Store = hb_opts:get(store, no_viable_store, Opts),
     NormKey = hb_ao:normalize_key(Key, Opts),
     DevPath = hb_store:resolve(Store, [BaseMsgID, <<"device">>]),
-    case is_direct_access_message(hb_store:read(Store, DevPath), NormKey, Opts) of
+    DevRes = hb_store:read(Store, DevPath),
+    case hb_ao_device:is_direct_key_access(DevRes, NormKey, Opts) of
         false ->
             ?event(read_cached,
                 {found_non_message_device,
                     {path, DevPath},
                     {key, NormKey}
-                }
+                },
+                Opts
             ),
             read_hashpath(BaseMsgID, Req, Opts);
         true ->
@@ -638,7 +640,8 @@ read_resolved(BaseMsgID, Req = #{ <<"path">> := Key }, Opts) when ?IS_ID(BaseMsg
                 {skipping_execution_store_lookup,
                     {base_msg, BaseMsgID},
                     {key, NormKey}
-                }
+                },
+                Opts
             ),
             KeyPath = hb_store:resolve(Store, [BaseMsgID, Key]),
             {hit, read(KeyPath, Opts)}
@@ -648,7 +651,7 @@ read_resolved(BaseMsg, Req = #{ <<"path">> := Key }, Opts) when is_map(BaseMsg) 
     % and perform a direct lookup if it does not.
     DevRes = hb_maps:find(<<"device">>, BaseMsg, Opts),
     NormKey = hb_ao:normalize_key(Key, Opts),
-    case is_direct_access_message(DevRes, NormKey, Opts) of
+    case hb_ao_device:is_direct_key_access(DevRes, NormKey, Opts) of
         false -> read_hashpath(BaseMsg, Req, Opts);
         true ->
             ?event(read_cached,
@@ -668,33 +671,12 @@ read_in_memory_key(BaseMsg, NormKey, _Opts) ->
     % For now, just wrap maps:find.
     case maps:find(NormKey, BaseMsg) of
         error ->
-            ?event(read_cached, {key_not_found, {key, NormKey}}),
+            ?event(read_cached, {key_not_found, {key, NormKey}, {base_msg, BaseMsg}}),
             not_found;
         {ok, Value} ->
-            ?event(read_cached, {key_found, {key, NormKey}, {value, Value}}),
+            ?event(read_cached, {key_found, {key, NormKey}}),
             {ok, Value}
     end.
-
-%% @doc Determine if a device is a `direct access': If there is a literal key
-%% in the message's Erlang map representation, will it always be returned?
-is_direct_access_message({_Status, DevRes}, Key, Opts) ->
-    is_direct_access_message(DevRes, Key, Opts);
-is_direct_access_message(not_found, Key, Opts) ->
-    is_direct_access_message(<<"message@1.0">>, Key, Opts);
-is_direct_access_message(error, Key, Opts) ->
-    is_direct_access_message(<<"message@1.0">>, Key, Opts);
-is_direct_access_message(<<"message@1.0">>, Key, Opts) ->
-    not lists:member(Key, [<<"id">>, <<"set">>, <<"get">>, <<"commit">>, <<"committers">>]);
-is_direct_access_message(DevName, NormKey, Opts) ->
-    ?event(read_cached, {calculating_info, {device, DevName}}),
-    case hb_ao_device:info(#{ <<"device">> => DevName }, Opts) of
-        Info = #{ exports := Exports } when not is_map_key(handler, Info) ->
-            not lists:member(NormKey, Exports);
-        _ ->
-            false
-    end;
-is_direct_access_message(_, _, _) ->
-    false.
 
 %% @doc Read the output of a prior computation, given BaseMsg and Req.
 read_hashpath(BaseMsgID, ReqID, Opts) when ?IS_ID(BaseMsgID) and ?IS_ID(ReqID) ->

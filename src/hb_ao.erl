@@ -137,9 +137,18 @@ resolve(Msg1, Path, Opts) when not is_map(Path) ->
     resolve(Msg1, #{ <<"path">> => Path }, Opts);
 resolve(Msg1, Msg2, Opts) ->
     PathParts = hb_path:from_message(request, Msg2, Opts),
-    ?event(ao_core, {stage, 1, prepare_multimessage_resolution, {path_parts, PathParts}}),
+    ?event(
+        ao_core,
+        {stage, 1, prepare_multimessage_resolution, {path_parts, PathParts}}
+    ),
     MessagesToExec = [ Msg2#{ <<"path">> => Path } || Path <- PathParts ],
-    ?event(ao_core, {stage, 1, prepare_multimessage_resolution, {messages_to_exec, MessagesToExec}}),
+    ?event(ao_core,
+        {stage,
+            1,
+            prepare_multimessage_resolution,
+            {messages_to_exec, MessagesToExec}
+        }
+    ),
     resolve_many([Msg1 | MessagesToExec], Opts).
 
 %% @doc Resolve a list of messages in sequence. Take the output of the first
@@ -189,7 +198,7 @@ do_resolve_many([], _Opts) ->
     {failure, <<"Attempted to resolve an empty message sequence.">>};
 do_resolve_many([Msg3], Opts) ->
     ?event(ao_core, {stage, 11, resolve_complete, Msg3}),
-    {ok, hb_cache:ensure_loaded(Msg3, Opts)};
+    hb_cache:ensure_loaded(maybe_force_message(Msg3, Opts), Opts);
 do_resolve_many([Msg1, Msg2 | MsgList], Opts) ->
     ?event(ao_core, {stage, 0, resolve_many, {msg1, Msg1}, {msg2, Msg2}}),
     case resolve_stage(1, Msg1, Msg2, Opts) of
@@ -208,7 +217,7 @@ do_resolve_many([Msg1, Msg2 | MsgList], Opts) ->
         Res ->
             % The result is not a resolvable message. Return it.
             ?event(ao_core, {stage, 13, resolve_many_terminating_early, Res}),
-            Res
+            maybe_force_message(Res, Opts)
     end.
 
 resolve_stage(1, Link, Msg2, Opts) when ?IS_LINK(Link) ->
@@ -516,31 +525,17 @@ resolve_stage(5, Msg1, Msg2, ExecName, Opts) ->
 resolve_stage(6, Func, Msg1, Msg2, ExecName, Opts) ->
     ?event(ao_core, {stage, 6, ExecName, execution}, Opts),
 	% Execution.
-	% First, determine the arguments to pass to the function.
-	% While calculating the arguments we unset the add_key option.
-	UserOpts1 = hb_maps:remove(trace, hb_maps:without(?TEMP_OPTS, Opts, Opts), Opts),
-    % Unless the user has explicitly requested recursive spawning, we
-    % unset the spawn_worker option so that we do not spawn a new worker
-    % for every resulting execution.
-    UserOpts2 =
-        case hb_maps:get(spawn_worker, UserOpts1, false, Opts) of
-            recursive -> UserOpts1;
-            _ -> hb_maps:remove(spawn_worker, UserOpts1, Opts)
-        end,
+    ExecOpts = execution_opts(Opts),
 	Args =
 		case hb_maps:get(add_key, Opts, false, Opts) of
-			false -> [Msg1, Msg2, UserOpts2];
-			Key -> [Key, Msg1, Msg2, UserOpts2]
+			false -> [Msg1, Msg2, ExecOpts];
+			Key -> [Key, Msg1, Msg2, ExecOpts]
 		end,
     % Try to execute the function.
     Res = 
         try
             TruncatedArgs = hb_ao_device:truncate_args(Func, Args),
-            MsgRes =
-                maybe_force_message(
-                    maybe_profiled_apply(Func, TruncatedArgs, Msg1, Msg2, Opts),
-                    Opts
-                ),
+            MsgRes = maybe_profiled_apply(Func, TruncatedArgs, Msg1, Msg2, Opts),
             ?event(
                 ao_result,
                 {
@@ -1211,3 +1206,17 @@ internal_opts(Opts) ->
         spawn_worker => false,
         await_inprogress => false
     }).
+
+%% @doc Return the node message that should be used in order to perform
+%% recursive executions.
+execution_opts(Opts) ->
+	% First, determine the arguments to pass to the function.
+	% While calculating the arguments we unset the add_key option.
+	Opts1 = hb_maps:remove(trace, hb_maps:without(?TEMP_OPTS, Opts, Opts), Opts),
+    % Unless the user has explicitly requested recursive spawning, we
+    % unset the spawn_worker option so that we do not spawn a new worker
+    % for every resulting execution.
+    case hb_maps:get(spawn_worker, Opts1, false, Opts) of
+        recursive -> Opts1;
+        _ -> hb_maps:remove(spawn_worker, Opts1, Opts)
+    end.

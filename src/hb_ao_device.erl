@@ -3,6 +3,7 @@
 %%% functions from a device.
 -module(hb_ao_device).
 -export([truncate_args/2, message_to_fun/3, message_to_device/2, load/2]).
+-export([is_direct_key_access/3]).
 -export([find_exported_function/5, is_exported/4, info/2, info/3, default/0]).
 -include("include/hb.hrl").
 
@@ -202,7 +203,10 @@ is_exported(Info = #{ excludes := Excludes }, Key, Opts) ->
         false -> is_exported(hb_maps:remove(excludes, Info, Opts), Key, Opts)
     end;
 is_exported(#{ exports := Exports }, Key, _Opts) ->
-    lists:member(hb_ao:normalize_key(Key), lists:map(fun hb_ao:normalize_key/1, Exports));
+    lists:member(
+        hb_ao:normalize_key(Key),
+        lists:map(fun hb_ao:normalize_key/1, Exports)
+    );
 is_exported(_Info, _Key, _Opts) -> true.
 
 %% @doc Load a device module from its name or a message ID.
@@ -366,6 +370,39 @@ info(DevMod, Msg, Opts) ->
 			Res;
 		not_found -> #{}
 	end.
+
+%% @doc Determine if a device is a `direct access': If there is a literal key
+%% in the message's Erlang map representation, will it always be returned?
+is_direct_key_access({_Status, DevRes}, Key, Opts) ->
+    is_direct_key_access(DevRes, Key, Opts);
+is_direct_key_access(not_found, Key, Opts) ->
+    is_direct_key_access(<<"message@1.0">>, Key, Opts);
+is_direct_key_access(error, Key, Opts) ->
+    is_direct_key_access(<<"message@1.0">>, Key, Opts);
+is_direct_key_access(<<"message@1.0">>, Key, _Opts) ->
+    not lists:member(
+        Key,
+        [
+            <<"get">>,
+            <<"set">>,
+            <<"remove">>,
+            <<"keys">>,
+            <<"id">>,
+            <<"commit">>,
+            <<"verify">>,
+            <<"committers">>,
+            <<"committed">>
+        ]
+    );
+is_direct_key_access(Dev, NormKey, Opts) ->
+    ?event(read_cached, {calculating_info, {device, Dev}}),
+    case info(#{ <<"device">> => Dev}, Opts) of
+        Info = #{ exports := Exports } when not is_map_key(handler, Info) ->
+            not lists:member(NormKey, Exports);
+        _ -> false
+    end;
+is_direct_key_access(_, _, _) ->
+    false.
 
 %% @doc The default device is the identity device, which simply returns the
 %% value associated with any key as it exists in its Erlang map. It should also

@@ -59,7 +59,7 @@ lookup(Msg1, Msg2, Opts) ->
             case hb_cache:read_resolved(Msg1, Msg2, OutputScopedOpts) of
                 {hit, not_found} ->
                     {error, not_found};
-                {hit, Res} ->
+                {hit, {ok, Res}} ->
                     ?event(caching,
                         {cache_hit,
                             {msg1, Msg1},
@@ -67,8 +67,8 @@ lookup(Msg1, Msg2, Opts) ->
                             {msg3, Res}
                         }
                     ),
-                    Res;
-                miss ->
+                    {ok, Res};
+                _ ->
                     ?event(caching, {result_cache_miss, Msg1, Msg2}),
                     case Settings of
                         #{ <<"only-if-cached">> := true } ->
