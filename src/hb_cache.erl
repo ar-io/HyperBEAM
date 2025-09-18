@@ -687,7 +687,7 @@ is_direct_access_message(<<"message@1.0">>, Key, Opts) ->
     not lists:member(Key, [<<"id">>, <<"set">>, <<"get">>, <<"commit">>, <<"committers">>]);
 is_direct_access_message(DevName, NormKey, Opts) ->
     ?event(read_cached, {calculating_info, {device, DevName}}),
-    case hb_ao:info(#{ <<"device">> => DevName }, Opts) of
+    case hb_ao_device:info(#{ <<"device">> => DevName }, Opts) of
         Info = #{ exports := Exports } when not is_map_key(handler, Info) ->
             not lists:member(NormKey, Exports);
         _ ->
