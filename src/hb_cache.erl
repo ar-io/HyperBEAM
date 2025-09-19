@@ -615,10 +615,17 @@ read_resolved(BaseMsg, Key, Opts) when is_binary(Key) ->
 read_resolved({link, ID, LinkOpts}, Req, Opts) ->
     read_resolved(ID, Req, maps:merge(LinkOpts, Opts));
 read_resolved(BaseMsgID, Req = #{ <<"path">> := Key }, Opts) when ?IS_ID(BaseMsgID) ->
-    ?event(read_cached, {attempting_read_resolved, {base_msg, BaseMsgID}, {req, Req}}),
     Store = hb_opts:get(store, no_viable_store, Opts),
     NormKey = hb_ao:normalize_key(Key, Opts),
     DevPath = hb_store:resolve(Store, [BaseMsgID, <<"device">>]),
+    ?event(
+        read_cached,
+        {attempting_read_resolved,
+            {base_msg, BaseMsgID},
+            {req, Req},
+            {store, Store}
+        }
+    ),
     DevRes = hb_store:read(Store, DevPath),
     case hb_ao_device:is_direct_key_access(DevRes, NormKey, Opts) of
         false ->
@@ -626,8 +633,7 @@ read_resolved(BaseMsgID, Req = #{ <<"path">> := Key }, Opts) when ?IS_ID(BaseMsg
                 {found_non_message_device,
                     {path, DevPath},
                     {key, NormKey}
-                },
-                Opts
+                }
             ),
             read_hashpath(BaseMsgID, Req, Opts);
         true ->
@@ -639,9 +645,9 @@ read_resolved(BaseMsgID, Req = #{ <<"path">> := Key }, Opts) when ?IS_ID(BaseMsg
             ?event(read_cached,
                 {skipping_execution_store_lookup,
                     {base_msg, BaseMsgID},
+                    {dev_res, DevRes},
                     {key, NormKey}
-                },
-                Opts
+                }
             ),
             KeyPath = hb_store:resolve(Store, [BaseMsgID, Key]),
             {hit, read(KeyPath, Opts)}
@@ -656,7 +662,7 @@ read_resolved(BaseMsg, Req = #{ <<"path">> := Key }, Opts) when is_map(BaseMsg) 
         true ->
             ?event(read_cached,
                 {skip_execution_memory_lookup,
-                    {device, DevRes},
+                    {dev_res, DevRes},
                     {path, NormKey}
                 }
             ),
@@ -671,7 +677,7 @@ read_in_memory_key(BaseMsg, NormKey, _Opts) ->
     % For now, just wrap maps:find.
     case maps:find(NormKey, BaseMsg) of
         error ->
-            ?event(read_cached, {key_not_found, {key, NormKey}, {base_msg, BaseMsg}}),
+            ?event(read_cached, {key_not_found, {key, NormKey}}),
             not_found;
         {ok, Value} ->
             ?event(read_cached, {key_found, {key, NormKey}}),
