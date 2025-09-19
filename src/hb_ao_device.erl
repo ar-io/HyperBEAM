@@ -3,7 +3,7 @@
 %%% functions from a device.
 -module(hb_ao_device).
 -export([truncate_args/2, message_to_fun/3, message_to_device/2, load/2]).
--export([is_direct_key_access/3]).
+-export([is_direct_key_access/3, is_direct_key_access/4]).
 -export([find_exported_function/5, is_exported/4, info/2, info/3, default/0]).
 -include("include/hb.hrl").
 
@@ -387,22 +387,52 @@ info(DevMod, Msg, Opts) ->
 
 %% @doc Determine if a device is a `direct access': If there is a literal key
 %% in the message's Erlang map representation, will it always be returned?
-is_direct_key_access({_Status, DevRes}, Key, Opts) ->
-    is_direct_key_access(DevRes, Key, Opts);
-is_direct_key_access(not_found, Key, Opts) ->
-    is_direct_key_access(<<"message@1.0">>, Key, Opts);
-is_direct_key_access(error, Key, Opts) ->
-    is_direct_key_access(<<"message@1.0">>, Key, Opts);
-is_direct_key_access(<<"message@1.0">>, Key, _Opts) ->
+is_direct_key_access(Base, Req, Opts) ->
+    is_direct_key_access(Base, Req, Opts, unknown).
+is_direct_key_access(Base, Req, Opts, MaybeStore) when ?IS_ID(Base) ->
+    Store =
+        if MaybeStore =:= unknown -> hb_opts:get(store, no_viable_store, Opts);
+        true -> MaybeStore
+        end,
+    DevPath = hb_store:resolve(Store, [Base, <<"device">>]),
+    case hb_store:read(Store, DevPath) of
+        {ok, Dev} ->
+            do_is_direct_key_access(Dev, Req, Opts);
+        not_found ->
+            case hb_store:type(Store, Base) of
+                not_found -> unknown;
+                _ -> do_is_direct_key_access(<<"message@1.0">>, Req, Opts)
+            end
+    end;
+is_direct_key_access(Base, Req, Opts, _) when is_map(Base) ->
+    do_is_direct_key_access(hb_maps:find(<<"device">>, Base, Opts), Req, Opts).
+
+do_is_direct_key_access(DevRes, #{ <<"path">> := Key }, Opts) ->
+    do_is_direct_key_access(DevRes, Key, Opts);
+do_is_direct_key_access({_Status, DevRes}, Key, Opts) ->
+    do_is_direct_key_access(DevRes, Key, Opts);
+do_is_direct_key_access(not_found, Key, Opts) ->
+    do_is_direct_key_access(<<"message@1.0">>, Key, Opts);
+do_is_direct_key_access(error, Key, Opts) ->
+    do_is_direct_key_access(<<"message@1.0">>, Key, Opts);
+do_is_direct_key_access(<<"message@1.0">>, Key, _Opts) ->
     not lists:member(Key, ?MESSAGE_KEYS);
-is_direct_key_access(Dev, NormKey, Opts) ->
+do_is_direct_key_access(Dev, NormKey, Opts) ->
     ?event(read_cached, {calculating_info, {device, Dev}}),
     case info(#{ <<"device">> => Dev}, Opts) of
-        Info = #{ exports := Exports } when not is_map_key(handler, Info) ->
+        Info = #{ exports := Exports }
+            when not is_map_key(handler, Info) andalso not is_map_key(default, Info) ->
+            ?event(read_cached,
+                {exports,
+                    {device, Dev},
+                    {key, NormKey},
+                    {exports, Exports}
+                }
+            ),
             not lists:member(NormKey, Exports ++ ?MESSAGE_KEYS);
         _ -> false
     end;
-is_direct_key_access(_, _, _) ->
+do_is_direct_key_access(_, _, _) ->
     false.
 
 %% @doc The default device is the identity device, which simply returns the

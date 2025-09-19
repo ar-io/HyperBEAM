@@ -617,21 +617,11 @@ read_resolved({link, ID, LinkOpts}, Req, Opts) ->
 read_resolved(BaseMsgID, Req = #{ <<"path">> := Key }, Opts) when ?IS_ID(BaseMsgID) ->
     Store = hb_opts:get(store, no_viable_store, Opts),
     NormKey = hb_ao:normalize_key(Key, Opts),
-    DevPath = hb_store:resolve(Store, [BaseMsgID, <<"device">>]),
-    ?event(
-        read_cached,
-        {attempting_read_resolved,
-            {base_msg, BaseMsgID},
-            {req, Req},
-            {store, Store}
-        }
-    ),
-    DevRes = hb_store:read(Store, DevPath),
-    case hb_ao_device:is_direct_key_access(DevRes, NormKey, Opts) of
+    case hb_ao_device:is_direct_key_access(BaseMsgID, Req, Opts, Store) of
+        unknown -> miss;
         false ->
             ?event(read_cached,
                 {found_non_message_device,
-                    {path, DevPath},
                     {key, NormKey}
                 }
             ),
@@ -645,7 +635,6 @@ read_resolved(BaseMsgID, Req = #{ <<"path">> := Key }, Opts) when ?IS_ID(BaseMsg
             ?event(read_cached,
                 {skipping_execution_store_lookup,
                     {base_msg, BaseMsgID},
-                    {dev_res, DevRes},
                     {key, NormKey}
                 }
             ),
@@ -655,14 +644,12 @@ read_resolved(BaseMsgID, Req = #{ <<"path">> := Key }, Opts) when ?IS_ID(BaseMsg
 read_resolved(BaseMsg, Req = #{ <<"path">> := Key }, Opts) when is_map(BaseMsg) ->
     % The base message is loaded, so we determine if it has an explicit device
     % and perform a direct lookup if it does not.
-    DevRes = hb_maps:find(<<"device">>, BaseMsg, Opts),
     NormKey = hb_ao:normalize_key(Key, Opts),
-    case hb_ao_device:is_direct_key_access(DevRes, NormKey, Opts) of
+    case hb_ao_device:is_direct_key_access(BaseMsg, Req, Opts) of
         false -> read_hashpath(BaseMsg, Req, Opts);
         true ->
             ?event(read_cached,
                 {skip_execution_memory_lookup,
-                    {dev_res, DevRes},
                     {path, NormKey}
                 }
             ),
