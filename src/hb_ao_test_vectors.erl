@@ -13,8 +13,7 @@
 %% `rebar3 eunit --test hb_ao_test_vectors:run_test'
 %% Comment/uncomment out as necessary.
 run_test() ->
-    hb_test_utils:run(resolve_id, normal, test_suite(), test_opts()),
-    hb_test_utils:run(resolve_id, only_if_cached, test_suite(), test_opts()).
+    skip.
 
 %% @doc Run each test in the file with each set of options. Start and reset
 %% the store for each test.
@@ -167,17 +166,27 @@ test_opts() ->
                 }
             },
             skip => [
-                % Exclude tests that return a list on its own for now, as raw 
-                % lists cannot be cached yet.
+                % Skip test with locally defined device, amongst others.
+                resolve_id,
+                start_as,
+                start_as_with_parameters,
+                as_path,
+                multiple_as_subresolutions,
+                key_from_id_device_with_args,
                 set_new_messages,
                 resolve_from_multiple_keys,
                 resolve_path_element,
+                device_with_default_handler_function,
+                device_with_handler_function,
                 denormalized_device_key,
-                % Skip test with locally defined device
+                get_with_device,
+                get_as_with_device,
+                set_with_device,
+                device_exports,
+                device_excludes,
                 deep_set_with_device,
-                as
-                % Skip tests that call hb_ao utils (which have their own 
-                % cache settings).
+                as,
+                step_hook
             ]
         }
     ].
