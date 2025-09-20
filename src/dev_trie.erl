@@ -8,6 +8,8 @@
 -module(dev_trie).
 -export([info/0, get/3, set/3]).
 -include_lib("eunit/include/eunit.hrl").
+-include("include/hb.hrl").
+
 
 %%% @doc How many prefix layers should new keys be separated into by default?
 -define(DEFAULT_LAYERS, 4).
@@ -201,7 +203,7 @@ second_layer_set_test() ->
         #{ <<"a">> => #{ <<"b">> => 2, <<"c">> => 3 } },
         hb_ao:set(
             #{ <<"device">> => <<"trie@1.0">>, <<"a">> => #{ <<"b">> => 2 } },
-            #{ <<"ab">> => 3 },
+            #{ <<"ac">> => 3 },
             #{}
         )
     ).
