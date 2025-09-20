@@ -60,8 +60,8 @@ longest_match(Best, _Key, [], _Opts) -> Best;
 longest_match(_Best, Key, [Key | _Keys], _Opts) -> Key;
 longest_match(Best, Key, [XKey | Keys], Opts) ->
     case binary:longest_common_prefix([XKey, Key]) of
-        NewBest when byte_size(NewBest) > byte_size(Best) ->
-            longest_match(NewBest, Key, Keys, Opts);
+        NewLength when NewLength > byte_size(Best) ->
+            longest_match(binary:part(Key, 0, NewLength), Key, Keys, Opts);
         _ ->
             longest_match(Best, Key, Keys, Opts)
     end.
