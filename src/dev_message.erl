@@ -255,8 +255,8 @@ commit(Self, Req, Opts) ->
             _ ->
                 Opts#{ linkify_mode => offload }
         end,
-    AttMod = hb_ao:message_to_device(#{ <<"device">> => AttDev }, CommitOpts),
-    {ok, AttFun} = hb_ao:find_exported_function(Base, AttMod, commit, 3, CommitOpts),
+    AttMod = hb_ao_device:message_to_device(#{ <<"device">> => AttDev }, CommitOpts),
+    {ok, AttFun} = hb_ao_device:find_exported_function(Base, AttMod, commit, 3, CommitOpts),
     % Encode to a TABM
     Loaded =
         ensure_commitments_loaded(
