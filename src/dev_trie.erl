@@ -127,12 +127,6 @@ set(Trie, Req, Opts) ->
                     group_keys(Trie, Insertable, Opts),
                     Opts
                 ),
-            % ATTENTION NEEDED HERE:
-            % Not sure if we need the normalization, if not, then remove the
-            % device key to get the pure trie, and if we need the message flow, 
-            %  then we normalize it. For now, we do the normalization and hence
-            %  the test is changed to expect the normalized output.
-            % maps:remove(<<"device">>, NewTrie)
             hb_message:normalize_commitments(NewTrie, Opts)
     end.
 
@@ -201,13 +195,17 @@ immediate_get_test() ->
     ).
 
 immediate_set_test() ->
-    Result = hb_ao:set(
-        #{ <<"device">> => <<"trie@1.0">>, <<"a">> => 1},
-        #{ <<"b">> => 2 },
-        #{}
-    ),
-    Expected = #{ <<"a">> => 1, <<"b">> => 2 },
-    ?assertEqual(Expected, maps:with([<<"a">>, <<"b">>], Result)).
+    ?assert(
+        hb_message:match(
+            #{ <<"a">> => 1, <<"b">> => 2 },
+            hb_ao:set(
+                #{ <<"device">> => <<"trie@1.0">>, <<"a">> => 1},
+                #{ <<"b">> => 2 },
+                #{}
+            ),
+            primary
+        )
+    ).
 
 second_layer_get_test() ->
     ?assertEqual(
@@ -223,12 +221,30 @@ second_layer_get_test() ->
     ).
 
 second_layer_set_test() ->
-    Result = hb_ao:set(
-        #{ <<"device">> => <<"trie@1.0">>, <<"a">> => #{ <<"b">> => 2 } },
-        #{ <<"ac">> => 3 },
-        #{}
-    ),
-    #{<<"a">> := AValue} = Result,
-    Expected = #{ <<"a">> => #{ <<"b">> => 2, <<"c">> => 3 } },
-    ActualA = maps:with([<<"b">>, <<"c">>], AValue),
-    ?assertEqual(Expected, #{<<"a">> => ActualA}).
+    ?assert(
+        hb_message:match(
+            #{ <<"a">> => #{ <<"b">> => 2, <<"c">> => 3 } },
+            hb_ao:set(
+                #{ <<"device">> => <<"trie@1.0">>, <<"a">> => #{ <<"b">> => 2 } },
+                #{ <<"ac">> => 3 },
+                #{}
+            ),
+            primary
+        )
+    ).
+
+set_multiple_test() ->
+    ?assert(
+        hb_message:match(
+            #{
+                <<"a">> => #{ <<"b">> => 2, <<"c">> => 3, <<"d">> => 4 },
+                <<"b">> => #{ <<"a">> => 5 }
+            },
+            hb_ao:set(
+                #{ <<"device">> => <<"trie@1.0">>, <<"a">> => #{ <<"b">> => 2 } },
+                #{ <<"ac">> => 3, <<"ad">> => 4, <<"ba">> => 5 },
+                #{}
+            ),
+            primary
+        )
+    ).
