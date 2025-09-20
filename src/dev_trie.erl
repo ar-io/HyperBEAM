@@ -132,8 +132,8 @@ set(Trie, Req, Opts) ->
             % device key to get the pure trie, and if we need the message flow, 
             %  then we normalize it. For now, we do the normalization and hence
             %  the test is changed to expect the normalized output.
-            maps:remove(<<"device">>, NewTrie)
-            % hb_message:normalize_commitments(NewTrie, Opts)
+            % maps:remove(<<"device">>, NewTrie)
+            hb_message:normalize_commitments(NewTrie, Opts)
     end.
 
 %% @doc Take a request of keys and values, then return a new map of requests
@@ -201,14 +201,13 @@ immediate_get_test() ->
     ).
 
 immediate_set_test() ->
-    ?assertEqual(
-        #{ <<"a">> => 1, <<"b">> => 2 },
-        hb_ao:set(
-            #{ <<"device">> => <<"trie@1.0">>, <<"a">> => 1},
-            #{ <<"b">> => 2 },
-            #{}
-        )
-    ).
+    Result = hb_ao:set(
+        #{ <<"device">> => <<"trie@1.0">>, <<"a">> => 1},
+        #{ <<"b">> => 2 },
+        #{}
+    ),
+    Expected = #{ <<"a">> => 1, <<"b">> => 2 },
+    ?assertEqual(Expected, maps:with([<<"a">>, <<"b">>], Result)).
 
 second_layer_get_test() ->
     ?assertEqual(
@@ -224,11 +223,12 @@ second_layer_get_test() ->
     ).
 
 second_layer_set_test() ->
-    ?assertEqual(
-        #{ <<"a">> => #{ <<"b">> => 2, <<"c">> => 3 } },
-        hb_ao:set(
-            #{ <<"device">> => <<"trie@1.0">>, <<"a">> => #{ <<"b">> => 2 } },
-            #{ <<"ac">> => 3 },
-            #{}
-        )
-    ).
+    Result = hb_ao:set(
+        #{ <<"device">> => <<"trie@1.0">>, <<"a">> => #{ <<"b">> => 2 } },
+        #{ <<"ac">> => 3 },
+        #{}
+    ),
+    #{<<"a">> := AValue} = Result,
+    Expected = #{ <<"a">> => #{ <<"b">> => 2, <<"c">> => 3 } },
+    ActualA = maps:with([<<"b">>, <<"c">>], AValue),
+    ?assertEqual(Expected, #{<<"a">> => ActualA}).
