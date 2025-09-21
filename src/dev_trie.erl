@@ -248,3 +248,45 @@ set_multiple_test() ->
             primary
         )
     ).
+
+large_balance_table_test() ->
+    TotalBalances = 300000,
+    Balances =
+        maps:from_list(
+            [
+                {
+                    hb_util:human_id(crypto:strong_rand_bytes(32)),
+                    hb_util:bin(rand:uniform(1_000_000_000_000))
+                }
+            ||
+                _ <- lists:seq(1, TotalBalances)
+            ]
+        ),
+    ?event({created_balances, {keys, maps:size(Balances)}}),
+    {ok, BaseTrie} =
+        hb_ao:resolve(
+            #{ <<"device">> => <<"trie@1.0">> },
+            Balances#{ <<"path">> => <<"set">> },
+            #{}
+        ),
+    ?event({created_trie, {base_keys, maps:size(BaseTrie)}}),
+    UpdateBalanceA = lists:nth(rand:uniform(TotalBalances), maps:keys(Balances)),
+    UpdateBalanceB = lists:nth(rand:uniform(TotalBalances), maps:keys(Balances)),
+    UpdatedTrie =
+        hb_ao:set(
+            BaseTrie,
+            #{
+                UpdateBalanceA => <<"0">>,
+                UpdateBalanceB => <<"0">>
+            },
+            #{}
+        ),
+    ?event({created_trie, {updated_keys, maps:size(UpdatedTrie)}}),
+    ?assertEqual(
+        <<"0">>,
+        hb_ao:get(UpdateBalanceA, UpdatedTrie, #{})
+    ),
+    ?assertEqual(
+        <<"0">>,
+        hb_ao:get(UpdateBalanceB, UpdatedTrie, #{})
+    ).
