@@ -110,7 +110,7 @@ id(RawBase, Req, NodeOpts) ->
     case hb_maps:keys(Commitments) of
         [] ->
             % If there are no commitments, we must (re)calculate the ID.
-            ?event(id, no_commitments_found_in_id_call),
+            ?event(debug_id, no_commitments_found_in_id_call),
             calculate_id(hb_maps:without([<<"commitments">>], ModBase), Req, IDOpts);
         IDs ->
             % Accumulate the relevant IDs into a single value. This is performed 
@@ -125,7 +125,7 @@ id(RawBase, Req, NodeOpts) ->
             % accumulation function starts with a buffer of zero encoded as a 
             % 256-bit binary. Subsequently, a single ID on its own 'accumulates' 
             % to itself.
-            ?event(id, {accumulating_existing_ids, IDs}),
+            ?event(debug_id, {accumulating_existing_ids, IDs}),
             {ok,
                 hb_util:human_id(
                     hb_crypto:accumulate(
@@ -160,7 +160,7 @@ calculate_id(Base, Req, NodeOpts) ->
     % If it doesn't exist, error.
     case hb_ao_device:find_exported_function(Base, DevMod, commit, 3, NodeOpts) of
         {ok, Fun} ->
-            ?event(id, {called_id_device, IDMod}, NodeOpts),
+            ?event(debug_id, {called_id_device, IDMod}, NodeOpts),
             {ok, #{ <<"commitments">> := Comms} } = 
                 apply(
                     Fun,
@@ -169,7 +169,12 @@ calculate_id(Base, Req, NodeOpts) ->
                         [Base, Req#{ <<"type">> => <<"unsigned">> }, NodeOpts]
                     )
                 ),
-            ?event(id, {generated_id, {type, unsigned}, {commitments, maps:keys(Comms)}}),
+            ?event(debug_id,
+                {generated_id,
+                    {type, unsigned},
+                    {commitments, maps:keys(Comms)}
+                }
+            ),
             {ok, hd(maps:keys(Comms))};
         not_found -> throw({id, id_resolver_not_found_for_device, DevMod})
     end.
