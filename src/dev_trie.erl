@@ -12,7 +12,8 @@
 
 
 %%% @doc How many prefix layers should new keys be separated into by default?
--define(DEFAULT_LAYERS, 9).
+-define(DEFAULT_LAYERS, 2).
+
 info() ->
     #{
         default => fun get/4
@@ -97,6 +98,7 @@ set(Trie, Req, Opts) ->
             NewTrie =
                 hb_maps:fold(
                     fun(Subkey, SubReq, Acc) ->
+                        ?event({set, {subkey, Subkey}, {subreq, SubReq}}),
                         case hb_maps:find(Subkey, Acc, Opts) of
                             {ok, Subtrie} ->
                                 Acc#{
@@ -127,14 +129,20 @@ set(Trie, Req, Opts) ->
                     group_keys(Trie, Insertable, Opts),
                     Opts
                 ),
+            Linkified =
+                hb_message:convert(
+                    NewTrie,
+                    <<"structured@1.0">>,
+                    <<"structured@1.0">>,
+                    Opts
+                ),
             WithoutHMac =
                 hb_message:without_commitments(
                     #{ <<"type">> => <<"unsigned">> },
-                    NewTrie,
+                    Linkified,
                     Opts
                 ),
-            Linkified = hb_link:normalize(WithoutHMac, offload, Opts),
-            hb_message:commit(Linkified, Opts, #{ <<"type">> => <<"unsigned">> })
+            hb_message:commit(WithoutHMac, Opts, #{ <<"type">> => <<"unsigned">> })
     end.
 
 %% @doc Take a request of keys and values, then return a new map of requests
@@ -257,7 +265,10 @@ set_multiple_test() ->
     ).
 
 large_balance_table_test() ->
-    TotalBalances = 3000,
+    application:ensure_all_started([prometheus, prometheus_cowboy, hb]),
+    TotalBalances = 350_000,
+    Engine = <<"event">>,
+    ?event(debug_trie, {large_balance_table_test, {total_balances, TotalBalances}}),
     Balances =
         maps:from_list(
             [
@@ -271,12 +282,21 @@ large_balance_table_test() ->
         ),
     ?event({created_balances, {keys, maps:size(Balances)}}),
     {ok, BaseTrie} =
-        hb_ao:resolve(
-            #{ <<"device">> => <<"trie@1.0">> },
-            Balances#{ <<"path">> => <<"set">> },
+        dev_profile:eval(
+            fun() ->
+                hb_ao:resolve(
+                    #{ <<"device">> => <<"trie@1.0">> },
+                    Balances#{ <<"path">> => <<"set">> },
+                    #{}
+                )
+            end,
+            #{
+                <<"engine">> => Engine,
+                <<"mode">> => <<"merge">>
+            },
             #{}
         ),
-    ?event({created_trie, {base_keys, maps:size(BaseTrie)}}),
+    ?event(debug_trie, {created_trie, maps:size(BaseTrie)}),
     UpdateBalanceA = lists:nth(rand:uniform(TotalBalances), maps:keys(Balances)),
     UpdateBalanceB = lists:nth(rand:uniform(TotalBalances), maps:keys(Balances)),
     UpdatedTrie =
@@ -288,12 +308,15 @@ large_balance_table_test() ->
             },
             #{}
         ),
-    ?event({created_trie, {updated_keys, maps:size(UpdatedTrie)}}),
+    ?event(debug_trie, {updated_trie, maps:size(UpdatedTrie)}),
+    ?event(debug_trie, {checking_updates, {keys, [UpdateBalanceA, UpdateBalanceB]}}),
     ?assertEqual(
         <<"0">>,
         hb_ao:get(UpdateBalanceA, UpdatedTrie, #{})
     ),
+    ?event(debug_trie, {checked_update, UpdateBalanceA}),
     ?assertEqual(
         <<"0">>,
         hb_ao:get(UpdateBalanceB, UpdatedTrie, #{})
-    ).
+    ),
+    ?event(debug_trie, {checked_update, UpdateBalanceB}).
