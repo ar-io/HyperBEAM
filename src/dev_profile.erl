@@ -283,15 +283,15 @@ eprof_profile(Fun, Req, Opts) ->
 %% @doc Profile using HyperBEAM's events.
 event_profile(Fun, Req, Opts) ->
     Start = hb_event:counters(),
-    Fun(),
+    Res = Fun(),
     End = hb_event:counters(),
     Diff = hb_message:diff(Start, End, Opts),
     case return_mode(Req, Opts) of
         <<"message">> ->
             {ok, Diff};
-        <<"console">> ->
+        _ ->
             hb_format:print(Diff),
-            {ok, Diff}
+            Res
     end.
 
 %%% Engine helpers: Generalized tools useful for multiple engines.
