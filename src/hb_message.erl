@@ -346,11 +346,10 @@ commit(Msg, Opts, Spec) ->
                         none ->
                             case hb_maps:get(<<"device">>, Spec, none, Opts) of
                                 none ->
-                                    throw(
-                                        {
-                                            no_commitment_device_in_codec_spec,
-                                            Spec
-                                        }
+                                    hb_opts:get(
+                                        commitment_device,
+                                        no_viable_commitment_device,
+                                        Opts
                                     );
                                 Device -> Device
                             end;

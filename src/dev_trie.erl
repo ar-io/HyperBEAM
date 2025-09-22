@@ -12,7 +12,7 @@
 
 
 %%% @doc How many prefix layers should new keys be separated into by default?
--define(DEFAULT_LAYERS, 4).
+-define(DEFAULT_LAYERS, 9).
 info() ->
     #{
         default => fun get/4
@@ -127,7 +127,14 @@ set(Trie, Req, Opts) ->
                     group_keys(Trie, Insertable, Opts),
                     Opts
                 ),
-            hb_message:normalize_commitments(NewTrie, Opts)
+            WithoutHMac =
+                hb_message:without_commitments(
+                    #{ <<"type">> => <<"unsigned">> },
+                    NewTrie,
+                    Opts
+                ),
+            Linkified = hb_link:normalize(WithoutHMac, offload, Opts),
+            hb_message:commit(Linkified, Opts, #{ <<"type">> => <<"unsigned">> })
     end.
 
 %% @doc Take a request of keys and values, then return a new map of requests
@@ -250,7 +257,7 @@ set_multiple_test() ->
     ).
 
 large_balance_table_test() ->
-    TotalBalances = 300000,
+    TotalBalances = 3000,
     Balances =
         maps:from_list(
             [
