@@ -342,3 +342,45 @@ req_prefix_test() ->
         not_found,
         hb_ao:get(<<"results/outbox/1">>, ResolvedState, #{})
     ).
+
+custom_set_patch_test() ->
+    % Apply a patch from a message containing a device with a custom `set' key
+    % (the `~trie@1.0' device in this example).
+    ID1 = hb_util:human_id(crypto:strong_rand_bytes(32)),
+    ID2 = hb_util:human_id(crypto:strong_rand_bytes(32)),
+    InitState = #{
+        <<"device">> => <<"patch@1.0">>,
+        <<"results">> => #{
+            <<"outbox">> => #{
+                <<"1">> => #{
+                    <<"method">> => <<"PATCH">>,
+                    <<"balances">> => #{
+                        ID1 => <<"50">>,
+                        ID2 => <<"250">>
+                    }
+                }
+            }
+        },
+        <<"balances">> => #{
+            ID1 => <<"250">>,
+            ID2 => <<"50">>
+        },
+        <<"other-message">> => <<"other-value">>,
+        <<"patch-to">> => <<"/balances">>,
+        <<"patch-from">> => <<"/results/outbox">>
+    },
+    {ok, ResolvedState} =
+        hb_ao:resolve(
+            InitState,
+            <<"compute">>,
+            #{}
+        ),
+    ?event({resolved_state, ResolvedState}),
+    ?assertEqual(
+        <<"250">>,
+        hb_ao:get(<<"balances/", ID1/binary>>, ResolvedState, #{})
+    ),
+    ?assertEqual(
+        <<"50">>,
+        hb_ao:get(<<"balances/", ID2/binary>>, ResolvedState, #{})
+    ).
