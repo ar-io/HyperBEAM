@@ -265,9 +265,7 @@ set_multiple_test() ->
     ).
 
 large_balance_table_test() ->
-    application:ensure_all_started([prometheus, prometheus_cowboy, hb]),
     TotalBalances = 20_000,
-    Engine = <<"event">>,
     ?event(debug_trie, {large_balance_table_test, {total_balances, TotalBalances}}),
     Balances =
         maps:from_list(
@@ -282,18 +280,9 @@ large_balance_table_test() ->
         ),
     ?event({created_balances, {keys, maps:size(Balances)}}),
     {ok, BaseTrie} =
-        dev_profile:eval(
-            fun() ->
-                hb_ao:resolve(
-                    #{ <<"device">> => <<"trie@1.0">> },
-                    Balances#{ <<"path">> => <<"set">> },
-                    #{}
-                )
-            end,
-            #{
-                <<"engine">> => Engine,
-                <<"mode">> => <<"merge">>
-            },
+        hb_ao:resolve(
+            #{ <<"device">> => <<"trie@1.0">> },
+            Balances#{ <<"path">> => <<"set">> },
             #{}
         ),
     ?event(debug_trie, {created_trie, maps:size(BaseTrie)}),
