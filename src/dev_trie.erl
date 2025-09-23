@@ -172,7 +172,7 @@ group_keys(Trie, Req, Opts) ->
                     BestMatch -> BestMatch
                 end
             end,
-            hb_maps:keys(Req, Opts)
+            hb_maps:keys(Req, Opts) -- [<<>>]
         ),
     Res = maps:map(
         fun(Subkey, SubKeys) ->
