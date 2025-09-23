@@ -872,31 +872,6 @@ error_infinite(Msg1, Msg2, Opts) ->
         }
     }.
 
-error_invalid_intermediate_status(Msg1, Msg2, Msg3, RemainingPath, Opts) ->
-    ?event(
-        ao_core,
-        {error, {type, invalid_intermediate_status},
-            {msg2, Msg2},
-            {msg3, Msg3},
-            {remaining_path, RemainingPath},
-            {opts, Opts}
-        },
-        Opts
-    ),
-    ?event(ao_result, 
-        {intermediate_failure, {msg1, Msg1},
-            {msg2, Msg2}, {msg3, Msg3},
-            {remaining_path, RemainingPath}, {opts, Opts}}),
-    {
-        error,
-        #{
-            <<"status">> => 422,
-            <<"body">> => Msg3,
-            <<"key">> => hb_maps:get(<<"path">>, Msg2, <<"Key unknown.">>, Opts),
-            <<"remaining-path">> => RemainingPath
-        }
-    }.
-
 %% @doc Handle an error in a device call.
 error_execution(ExecGroup, Msg2, Whence, {Class, Exception, Stacktrace}, Opts) ->
     Error = {error, Whence, {Class, Exception, Stacktrace}},
