@@ -6,7 +6,7 @@
 %%% `set' function will correctly handle putting the values into the correct
 %%% locations in the tree, re-generating only the necessary identifiers.
 -module(dev_trie).
--export([info/0, get/3, set/3]).
+-export([info/0, get/3, set/3, keys/3, remove/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -18,6 +18,48 @@ info() ->
     #{
         default => fun get/4
     }.
+
+%% @doc Get all the keys in the trie.
+keys(Trie, _, Opts) ->
+    do_keys(<<"">>, Trie, Opts).
+do_keys(Prefix, Trie, Opts) ->
+    Keys =
+        hb_maps:keys(
+            hb_maps:without(
+                [<<"commitments">>, <<"priv">>],
+                Trie,
+                Opts
+            ),
+            Opts
+        ),
+    lists:flatten(lists:map(
+        fun(Key) ->
+            case hb_maps:find(Key, Trie, Opts) of
+                {ok, Trie} when is_map(Trie) ->
+                    InnertKeys = do_keys(Key, Trie, Opts),
+                    lists:map(
+                        fun(InnerKey) ->
+                            <<Prefix/binary, Key/binary, InnerKey/binary>>
+                        end,
+                        InnertKeys
+                    );
+                _ ->
+                    [<<Prefix/binary, Key/binary>>]
+            end
+        end,
+        Keys
+    )).
+
+%% @doc Remove a key from the trie.
+remove(Trie, #{ <<"item">> := Key }, Opts) ->
+    remove(Trie, #{ <<"items">> => [Key] }, Opts);
+remove(Trie, #{ <<"items">> := Keys }, Opts) ->
+    ?event(debug_trie, {remove, {trie, Trie}, {removing, Keys}}),
+    set(
+        Trie,
+        #{ Key => unset || Key <- Keys },
+        Opts
+    ).
 
 %% @doc Get the value of a key from the trie in a base message. The function
 %% calls recursively to find the value, matching the largest prefix of the key
@@ -58,7 +100,7 @@ get(Trie, Req, Opts) ->
 %% @doc Find the longest match for a key in a message representing a layer of 
 %% the trie.
 longest_match(Key, Trie, Opts) ->
-    longest_match(<<>>, Key, hb_maps:keys(Trie, Opts), Opts).
+    longest_match(<<>>, Key, hb_maps:keys(Trie, Opts) -- [<<"device">>], Opts).
 longest_match(Best, _Key, [], _Opts) -> Best;
 longest_match(_Best, Key, [Key | _Keys], _Opts) -> Key;
 longest_match(Best, Key, [XKey | Keys], Opts) ->
@@ -74,6 +116,7 @@ longest_match(Best, Key, [XKey | Keys], Opts) ->
 set(Trie, Req, Opts) ->
     SystemKeys = [<<"set-depth">>, <<"path">>],
     Insertable = hb_maps:without(SystemKeys, Req, Opts),
+    ?event(debug_trie, {set, {trie, Trie}, {inserting, Insertable}}),
     MaxKeyLength = case hb_maps:keys(Insertable, Opts) of
         [] -> 1;
         Keys -> lists:max([byte_size(K) || K <- Keys])
@@ -173,7 +216,7 @@ group_keys(Trie, Req, Opts) ->
             end,
             hb_maps:keys(Req, Opts)
         ),
-    maps:map(
+    Res = maps:map(
         fun(Subkey, SubKeys) ->
             maps:from_list(
                 lists:map(
@@ -192,7 +235,9 @@ group_keys(Trie, Req, Opts) ->
             )
         end,
         SubReqs
-    ).
+    ),
+    ?event({grouped_keys, {explicit, Res}}),
+    Res.
 
 %%% Tests
 
@@ -265,7 +310,7 @@ set_multiple_test() ->
     ).
 
 large_balance_table_test() ->
-    TotalBalances = 20_000,
+    TotalBalances = 350_000,
     ?event(debug_trie, {large_balance_table_test, {total_balances, TotalBalances}}),
     Balances =
         maps:from_list(
