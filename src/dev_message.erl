@@ -675,7 +675,7 @@ set(Message1, NewValuesMsg, Opts) ->
         hb_private:set_priv(
             case maps:get(<<"set-mode">>, NewValuesMsg, <<"deep">>) of
                 <<"explicit">> -> maps:merge(BaseValues, NewValues);
-                _ -> hb_util:deep_merge(BaseValues, NewValues, Opts)
+                _ -> do_deep_merge(BaseValues, NewValues, Opts)
             end,
             OriginalPriv
         ),
@@ -698,6 +698,42 @@ set(Message1, NewValuesMsg, Opts) ->
                     {ok, hb_maps:without([<<"commitments">>], Merged, Opts)}
             end
     end.
+
+%% @doc Deep merge keys in a message, utilizing the set device of any child
+%% keys that are themselves messages.
+do_deep_merge(BaseValues, NewValues, Opts) ->
+    {WithNestedMerges, StillToDeepMerge} =
+        maps:fold(
+            fun(Key, NewValue, {Acc, ToDeepMerge})
+                    when is_map(NewValue)
+                    andalso is_map(map_get(Key, Acc)) ->
+                {
+                    Acc#{
+                        Key =>
+                            hb_util:ok(
+                                hb_ao:resolve(
+                                    map_get(Key, Acc),
+                                    NewValue#{
+                                        <<"path">> => <<"set">>
+                                    },
+                                    Opts
+                                ),
+                                Opts
+                            )
+                    },
+                    ToDeepMerge
+                };
+            (Key, _, {Acc, ToDeepMerge}) ->
+                {Acc, [Key | ToDeepMerge]}
+            end,
+            {BaseValues, []},
+            NewValues
+        ),
+    hb_util:deep_merge(
+        WithNestedMerges,
+        maps:with(StillToDeepMerge, NewValues),
+        Opts
+    ).
 
 %% @doc Special case of `set/3' for setting the `path' key. This cannot be set
 %% using the normal `set' function, as the `path' is a reserved key, used to

@@ -1095,74 +1095,37 @@ device_set(Msg, Key, Value, Mode, Opts) ->
             _ ->
                 #{ <<"path">> => <<"set">>, Key => Value }
         end,
-    case is_merge(Msg, Key, Value, Mode, Opts) of
-        {true, ExistingMsg} ->
-            ?event(
-                debug_set,
-                {merging_with_device,
-                    {existing_msg, ExistingMsg},
-                    {key, Key},
-                    {value, Value},
-                    {mode, Mode},
-                    {req, ReqWithoutMode}
-                },
-                Opts
+    Req =
+        case Mode of
+            <<"deep">> -> ReqWithoutMode;
+            <<"explicit">> -> ReqWithoutMode#{ <<"set-mode">> => Mode }
+        end,
+    ?event(
+        debug_set,
+        {
+            calling_device_set,
+            {base, Msg},
+            {key, Key},
+            {value, Value},
+            {full_req, Req}
+        },
+        Opts
+    ),
+    Res =
+        hb_util:ok(
+            resolve(
+                Msg,
+                Req,
+                internal_opts(Opts)
             ),
-            Msg#{
-                Key =>
-                    hb_util:ok(
-                        hb_ao:resolve(
-                            ExistingMsg,
-                            Value#{ <<"path">> => <<"set">> },
-                            internal_opts(Opts)
-                        ),
-                        internal_opts(Opts)
-                    )
-            };
-        false ->
-            Req =
-                case Mode of
-                    <<"deep">> -> ReqWithoutMode;
-                    <<"explicit">> -> ReqWithoutMode#{ <<"set-mode">> => Mode }
-                end,
-            ?event(
-                debug_set,
-                {
-                    calling_device_set,
-                    {base, Msg},
-                    {key, Key},
-                    {value, Value},
-                    {full_req, Req}
-                },
-                Opts
-            ),
-            Res =
-                hb_util:ok(
-                    resolve(
-                        Msg,
-                        Req,
-                        internal_opts(Opts)
-                    ),
-                    internal_opts(Opts)
-                ),
-            ?event(
-                debug_set,
-                {device_set_result, Res},
-                Opts
-            ),
-            Res
-    end.
-
-%% @doc Determine if a set key call is actually a merge between existing messages.
-is_merge(_Msg, _Key, _Value, <<"explicit">>, _Opts) -> false;
-is_merge(Msg, Key, Value, <<"deep">>, Opts) when is_map(Msg) andalso is_map(Value) ->
-    case hb_maps:get(Key, Msg, undefined, Opts) of
-        ExistingMsg when is_map(ExistingMsg) ->
-            {true, ExistingMsg};
-        _ ->
-            false
-    end;
-is_merge(_Msg, _Key, _Value, <<"deep">>, _Opts) -> false.
+            internal_opts(Opts)
+        ),
+    ?event(
+        debug_set,
+        {device_set_result, Res},
+        Opts
+    ),
+    Res.
 
 %% @doc Remove a key from a message, using its underlying device.
 remove(Msg, Key) -> remove(Msg, Key, #{}).
