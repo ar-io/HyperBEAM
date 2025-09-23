@@ -354,19 +354,16 @@ custom_set_patch_test() ->
             <<"outbox">> => #{
                 <<"1">> => #{
                     <<"method">> => <<"PATCH">>,
-                    <<"balances">> => #{
-                        ID1 => <<"50">>,
-                        ID2 => <<"250">>
-                    }
+                    ID1 => <<"50">>,
+                    ID2 => <<"250">>
                 }
             }
         },
         <<"balances">> => #{
-            ID1 => <<"250">>,
-            ID2 => <<"50">>
+            <<"device">> => <<"trie@1.0">>
         },
         <<"other-message">> => <<"other-value">>,
-        <<"patch-to">> => <<"/balances">>,
+        <<"patch-to">> => <<"balances">>,
         <<"patch-from">> => <<"/results/outbox">>
     },
     {ok, ResolvedState} =
@@ -375,12 +372,12 @@ custom_set_patch_test() ->
             <<"compute">>,
             #{}
         ),
-    ?event({resolved_state, ResolvedState}),
+    ?event(debug_test, {resolved_state, ResolvedState}),
     ?assertEqual(
-        <<"250">>,
+        <<"50">>,
         hb_ao:get(<<"balances/", ID1/binary>>, ResolvedState, #{})
     ),
     ?assertEqual(
-        <<"50">>,
+        <<"250">>,
         hb_ao:get(<<"balances/", ID2/binary>>, ResolvedState, #{})
     ).
