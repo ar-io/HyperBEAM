@@ -1049,22 +1049,31 @@ deep_set(Msg, [Key], Value, Opts) ->
 deep_set(Msg, [Key|Rest], Value, Opts) ->
     case resolve(Msg, Key, Opts) of 
         {ok, SubMsg} ->
-            ?event(
+            ?event(debug_set,
                 {traversing_deeper_to_set,
                     {current_key, Key},
                     {current_value, SubMsg},
                     {rest, Rest}
-                }
+                },
+                Opts
             ),
-            Res = device_set(Msg, Key, deep_set(SubMsg, Rest, Value, Opts), <<"explicit">>, Opts),
-            ?event({deep_set_result, {msg, Msg}, {key, Key}, {res, Res}}),
+            Res =
+                device_set(
+                    Msg,
+                    Key,
+                    deep_set(SubMsg, Rest, Value, Opts),
+                    <<"explicit">>,
+                    Opts
+                ),
+            ?event(debug_set, {deep_set, {msg, Msg}, {key, Key}, {res, Res}}, Opts),
             Res;
         _ ->
-            ?event(
+            ?event(debug_set,
                 {creating_new_map,
                     {current_key, Key},
                     {rest, Rest}
-                }
+                },
+                Opts
             ),
             Msg#{ Key => deep_set(#{}, Rest, Value, Opts) }
     end.
@@ -1086,35 +1095,74 @@ device_set(Msg, Key, Value, Mode, Opts) ->
             _ ->
                 #{ <<"path">> => <<"set">>, Key => Value }
         end,
-    Req =
-        case Mode of
-            <<"deep">> -> ReqWithoutMode;
-            <<"explicit">> -> ReqWithoutMode#{ <<"set-mode">> => Mode }
-        end,
-	?event(
-        ao_internal,
-        {
-            calling_device_set,
-            {msg, Msg},
-            {applying_set, Req}
-        },
-        Opts
-    ),
-	Res =
-        hb_util:ok(
-            resolve(
-                Msg,
-                Req,
-                internal_opts(Opts)
+    case is_merge(Msg, Key, Value, Mode, Opts) of
+        {true, ExistingMsg} ->
+            ?event(
+                debug_set,
+                {merging_with_device,
+                    {existing_msg, ExistingMsg},
+                    {key, Key},
+                    {value, Value},
+                    {mode, Mode},
+                    {req, ReqWithoutMode}
+                },
+                Opts
             ),
-            internal_opts(Opts)
-        ),
-	?event(
-        ao_internal,
-        {device_set_result, Res},
-        Opts
-    ),
-	Res.
+            Msg#{
+                Key =>
+                    hb_util:ok(
+                        hb_ao:resolve(
+                            ExistingMsg,
+                            Value#{ <<"path">> => <<"set">> },
+                            internal_opts(Opts)
+                        ),
+                        internal_opts(Opts)
+                    )
+            };
+        false ->
+            Req =
+                case Mode of
+                    <<"deep">> -> ReqWithoutMode;
+                    <<"explicit">> -> ReqWithoutMode#{ <<"set-mode">> => Mode }
+                end,
+            ?event(
+                debug_set,
+                {
+                    calling_device_set,
+                    {base, Msg},
+                    {key, Key},
+                    {value, Value},
+                    {full_req, Req}
+                },
+                Opts
+            ),
+            Res =
+                hb_util:ok(
+                    resolve(
+                        Msg,
+                        Req,
+                        internal_opts(Opts)
+                    ),
+                    internal_opts(Opts)
+                ),
+            ?event(
+                debug_set,
+                {device_set_result, Res},
+                Opts
+            ),
+            Res
+    end.
+
+%% @doc Determine if a set key call is actually a merge between existing messages.
+is_merge(_Msg, _Key, _Value, <<"explicit">>, _Opts) -> false;
+is_merge(Msg, Key, Value, <<"deep">>, Opts) when is_map(Msg) andalso is_map(Value) ->
+    case hb_maps:get(Key, Msg, undefined, Opts) of
+        ExistingMsg when is_map(ExistingMsg) ->
+            {true, ExistingMsg};
+        _ ->
+            false
+    end;
+is_merge(_Msg, _Key, _Value, <<"deep">>, _Opts) -> false.
 
 %% @doc Remove a key from a message, using its underlying device.
 remove(Msg, Key) -> remove(Msg, Key, #{}).
