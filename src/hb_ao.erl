@@ -999,7 +999,12 @@ keys(Msg, Opts, remove) ->
 %% `HashPath' for each step.
 set(RawMsg1, RawMsg2, Opts) when is_map(RawMsg2) ->
     Msg1 = normalize_keys(RawMsg1, Opts),
-    Msg2 = hb_maps:without([<<"hashpath">>, <<"priv">>], normalize_keys(RawMsg2, Opts), Opts),
+    Msg2 =
+        hb_maps:without(
+            [<<"hashpath">>, <<"priv">>],
+            normalize_keys(RawMsg2, Opts),
+            Opts
+        ),
     ?event(ao_internal, {set_called, {msg1, Msg1}, {msg2, Msg2}}, Opts),
     % Get the next key to set. 
     case keys(Msg2, internal_opts(Opts)) of

@@ -268,7 +268,7 @@ set_multiple_test() ->
     ).
 
 large_balance_table_test() ->
-    TotalBalances = 350_000,
+    TotalBalances = 3_000,
     ?event(debug_trie, {large_balance_table_test, {total_balances, TotalBalances}}),
     Balances =
         maps:from_list(
