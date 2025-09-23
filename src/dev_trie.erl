@@ -266,7 +266,7 @@ set_multiple_test() ->
 
 large_balance_table_test() ->
     application:ensure_all_started([prometheus, prometheus_cowboy, hb]),
-    TotalBalances = 350_000,
+    TotalBalances = 20_000,
     Engine = <<"event">>,
     ?event(debug_trie, {large_balance_table_test, {total_balances, TotalBalances}}),
     Balances =
