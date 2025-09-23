@@ -162,7 +162,6 @@ move(Mode, Msg1, Msg2, Opts) ->
                     )
             end,
         ?event({to_write, ToWriteMod}),
-        ?hr(),
         % Find the target to apply the patches to, and apply them.
         PatchedResult =
             hb_ao:set(
@@ -171,7 +170,6 @@ move(Mode, Msg1, Msg2, Opts) ->
                 ToWriteMod,
                 Opts
             ),
-        ?hr(),
         % Return the patched message and the source, less the patches.
         ?event({patch_result, PatchedResult}),
         {ok, PatchedResult}
@@ -348,7 +346,6 @@ req_prefix_test() ->
     ).
 
 custom_set_patch_test() ->
-    hb:init(),
     % Apply a patch from a message containing a device with a custom `set' key
     % (the `~trie@1.0' device in this example).
     ID1 = hb_util:human_id(crypto:strong_rand_bytes(32)),
@@ -381,24 +378,12 @@ custom_set_patch_test() ->
             <<"compute">>,
             #{}
         ),
-    ?event(debug_test, {resolved_state_1, State1}),
-    {ok, State2} =
-        hb_ao:resolve(
-            State1#{
-                <<"results">> => #{
-                    <<"outbox">> => #{
-                    }
-                }
-            },
-            <<"compute">>,
-            #{}
-        ),
-    ?event(debug_test, {resolved_state_2, State2}),
+    ?event(debug_test, {resolved_state, State1}),
     ?assertEqual(
         <<"50">>,
-        hb_ao:get(<<"balances/", ID1/binary>>, State2, #{})
+        hb_ao:get(<<"balances/", ID1/binary>>, State1, #{})
     ),
     ?assertEqual(
         <<"250">>,
-        hb_ao:get(<<"balances/", ID2/binary>>, State2, #{})
+        hb_ao:get(<<"balances/", ID2/binary>>, State1, #{})
     ).

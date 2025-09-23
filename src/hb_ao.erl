@@ -1002,10 +1002,9 @@ set(RawMsg1, RawMsg2, Opts) when is_map(RawMsg2) ->
     Msg2 = hb_maps:without([<<"hashpath">>, <<"priv">>], normalize_keys(RawMsg2, Opts), Opts),
     ?event(ao_internal, {set_called, {msg1, Msg1}, {msg2, Msg2}}, Opts),
     % Get the next key to set. 
-    case hb_maps:keys(Msg2, internal_opts(Opts)) of
+    case keys(Msg2, internal_opts(Opts)) of
         [] -> Msg1;
-        [Key|Rest] ->
-            ?event(debug_trie, {setting_key, {key, Key}, {rest, Rest}, {msg2, Msg2}}),
+        [Key|_] ->
             % Get the value to set. Use AO-Core by default, but fall back to
             % getting via `maps' if it is not found.
             Val =
@@ -1017,7 +1016,7 @@ set(RawMsg1, RawMsg2, Opts) when is_map(RawMsg2) ->
             % Next, set the key and recurse, removing the key from the Msg2.
             set(
                 set(Msg1, Key, Val, internal_opts(Opts)),
-                hb_maps:remove(Key, Msg2, internal_opts(Opts)),
+                remove(Msg2, Key, internal_opts(Opts)),
                 Opts
             )
     end.

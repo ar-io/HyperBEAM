@@ -6,7 +6,7 @@
 %%% `set' function will correctly handle putting the values into the correct
 %%% locations in the tree, re-generating only the necessary identifiers.
 -module(dev_trie).
--export([info/0, get/3, set/3, keys/3, remove/3]).
+-export([info/0, get/3, set/3]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -18,48 +18,6 @@ info() ->
     #{
         default => fun get/4
     }.
-
-%% @doc Get all the keys in the trie.
-keys(Trie, _, Opts) ->
-    do_keys(<<"">>, Trie, Opts).
-do_keys(Prefix, Trie, Opts) ->
-    Keys =
-        hb_maps:keys(
-            hb_maps:without(
-                [<<"commitments">>, <<"priv">>],
-                Trie,
-                Opts
-            ),
-            Opts
-        ),
-    lists:flatten(lists:map(
-        fun(Key) ->
-            case hb_maps:find(Key, Trie, Opts) of
-                {ok, Trie} when is_map(Trie) ->
-                    InnertKeys = do_keys(Key, Trie, Opts),
-                    lists:map(
-                        fun(InnerKey) ->
-                            <<Prefix/binary, Key/binary, InnerKey/binary>>
-                        end,
-                        InnertKeys
-                    );
-                _ ->
-                    [<<Prefix/binary, Key/binary>>]
-            end
-        end,
-        Keys
-    )).
-
-%% @doc Remove a key from the trie.
-remove(Trie, #{ <<"item">> := Key }, Opts) ->
-    remove(Trie, #{ <<"items">> => [Key] }, Opts);
-remove(Trie, #{ <<"items">> := Keys }, Opts) ->
-    ?event(debug_trie, {remove, {trie, Trie}, {removing, Keys}}),
-    set(
-        Trie,
-        #{ Key => unset || Key <- Keys },
-        Opts
-    ).
 
 %% @doc Get the value of a key from the trie in a base message. The function
 %% calls recursively to find the value, matching the largest prefix of the key
