@@ -10,7 +10,6 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
-
 %%% @doc How many prefix layers should new keys be separated into by default?
 -define(DEFAULT_LAYERS, 2).
 
@@ -25,33 +24,23 @@ info() ->
 get(Key, Trie, Req, Opts) ->
     get(Trie, Req#{ <<"key">> => Key }, Opts).
 get(Trie, Req, Opts) ->
-    case hb_maps:get(<<"key">>, Req, undefined, Opts) of
-        undefined ->
-            % If we don't have a key to search for, return an error.
-            {error, not_found};
-        Key ->
+    case hb_maps:find(<<"key">>, Req, Opts) of
+        error -> {error, <<"`key' parameter is required for trie lookup.">>};
+        {ok, <<>>} -> {ok, Trie};
+        {ok, Key} ->
             % If we have a key to search for, find the longest prefix match
             % amongst the keys in the trie and recurse, until there are no more
             % bytes of the key to match on.
             case longest_match(Key, Trie, Opts) of
                 <<>> -> {error, not_found};
-                Match ->
+                Prefix ->
                     % Find the child node and the remaining key.
-                    Child = hb_maps:get(Match, Trie, Opts),
-                    Remaining =
-                        binary:part(
-                            Key,
-                            byte_size(Match),
-                            byte_size(Key) - byte_size(Match)
-                        ),
-                    case Remaining of
-                        <<>> ->
-                            % If we have no remaining bytes, return the child node.
-                            {ok, Child};
-                        _ ->
-                            % If we have remaining bytes, recurse.
-                            get(Remaining, Child, #{}, Opts)
-                    end
+                    get(
+                        remove_prefix(Prefix, Key),
+                        hb_maps:get(Prefix, Trie, Opts),
+                        #{},
+                        Opts
+                    )
             end
     end.
 
@@ -71,37 +60,24 @@ longest_match(Best, Key, [XKey | Keys], Opts) ->
 
 %% @doc Set keys and their values in the trie. The `set-depth' key determines
 %% how many layers of the trie the keys should be separated into.
-set(Trie, Req, Opts) ->
-    SystemKeys = [<<"set-depth">>, <<"path">>],
-    Insertable = hb_maps:without(SystemKeys, Req, Opts),
+set(Base, Req, Opts) ->
+    {ok, do_set(Base, Req, Opts)}.
+do_set(Link, Req, Opts) when ?IS_LINK(Link) ->
+    do_set(hb_cache:ensure_loaded(Link, Opts), Req, Opts);
+do_set(NonTrie, Req, Opts) when not is_map(NonTrie) ->
+    % We are attempting to set a value on a non-trie, so we wipe the entire
+    % base and replace it with a new trie.
+    do_set(#{}, Req, Opts);
+do_set(Trie, Req, Opts) ->
+    Insertable = hb_maps:without([<<"set-depth">>, <<"path">>], Req, Opts),
     ?event(debug_trie, {set, {trie, Trie}, {inserting, Insertable}}),
-    MaxKeyLength = case hb_maps:keys(Insertable, Opts) of
-        [] -> 1;
-        Keys -> lists:max([byte_size(K) || K <- Keys])
-    end,
-    DefaultDepth = min(?DEFAULT_LAYERS, MaxKeyLength),
-    ActualDepth = hb_maps:get(<<"set-depth">>, Req, DefaultDepth, Opts),
-    case ActualDepth of
-        0 ->
-            ?event(debug_trie, {depth_zero_case, {insertable, Insertable}}),
-            case maps:take(<<>>, Insertable) of
-                {Value, #{}} -> 
-                    ?event(debug_trie, {empty_key_only, {value, Value}}),
-                    Value;
-                {_Value, RestInsertable} -> 
-                    ?event(debug_trie, 
-                        {empty_key_with_others,    
-                            {rest, RestInsertable}
-                        }
-                    ),
-                    hb_ao:set(Trie, RestInsertable, Opts);
-                % ATTENTION NEEDED HERE:
-                error -> 
-                    Result = hb_ao:set(Trie, Insertable, Opts),
-                    ?event(debug_trie, {hb_ao_set_result, Result}),
-                    Result
-            end;
-        SetDepth ->
+    Depth = hb_maps:get(<<"set-depth">>, Req, ?DEFAULT_LAYERS, Opts),
+    % If we are setting a terminal value (indicated by the presence of an empty
+    % string key or a depth of 0), we simply return it.
+    case {hb_maps:find(<<>>, Insertable, Opts), Depth} of
+        {{ok, Terminal}, _} -> Terminal;
+        {_, 0} -> hb_ao:set(Trie, Insertable, Opts);
+        {_, SetDepth} ->
             % Split keys from the request into groups for each sub-branch of the
             % trie that they should be inserted into. Each group is then inserted
             % in a single recursive call.
@@ -110,64 +86,16 @@ set(Trie, Req, Opts) ->
             NewTrie =
                 hb_maps:fold(
                     fun(Subkey, SubReq, Acc) ->
-                        case is_map(Acc) of
-                            true ->
-                                case hb_maps:find(Subkey, Acc, Opts) of
-                                    {ok, Subtrie} ->
-                                        case is_map(Subtrie) of
-                                            true ->
-                                                Acc#{
-                                                    Subkey =>
-                                                        set(
-                                                            Subtrie,
-                                                            SubReq#{
-                                                                <<"set-depth">> => SetDepth - 1
-                                                            },
-                                                            Opts
-                                                        )
-                                                };
-                                            false ->
-                                                NewSubReq = 
-                                                    SubReq#{<<"set-depth">> => 0},
-                                                Acc#{
-                                                    Subkey =>
-                                                        set(
-                                                            #{},
-                                                            NewSubReq,
-                                                            Opts
-                                                        )
-                                                }
-                                        end;
-                                    error ->
-                                        SubReqKeys = 
-                                            hb_maps:keys(SubReq, Opts) -- [<<"set-depth">>],
-                                        NewDepth = case SubReqKeys of
-                                            [<<>>] -> 0;  % Only empty key, use depth 0
-                                            _ -> SetDepth - 1  % Normal case
-                                        end,
-                                        Acc#{
-                                            Subkey =>
-                                                set(
-                                                    #{},
-                                                    SubReq#{
-                                                        <<"set-depth">> => NewDepth
-                                                    },
-                                                    Opts
-                                                )
-                                        }
-                                end;
-                            false ->
-                                #{
-                                    Subkey =>
-                                        set(
-                                            #{},
-                                            SubReq#{
-                                                <<"set-depth">> => 0
-                                            },
-                                            Opts
-                                        )
-                                }
-                        end
+                        Acc#{
+                            Subkey =>
+                                do_set(
+                                    hb_maps:get(Subkey, Acc, #{}, Opts),
+                                    SubReq#{
+                                        <<"set-depth">> => SetDepth - 1
+                                    },
+                                    Opts
+                                )
+                        }
                     end,
                     Trie,
                     group_keys(Trie, Insertable, Opts),
@@ -210,18 +138,9 @@ group_keys(Trie, Req, Opts) ->
     SubReqs = 
         maps:groups_from_list(
             fun(ReqKey) ->
-                LongestMatch = longest_match(ReqKey, Trie, Opts),
-                case LongestMatch of
-                    <<>> -> 
-                        case ReqKey of
-                            <<>> -> 
-                                ReqKey;
-                            _ ->
-                                Prefix = binary:part(ReqKey, 0, 1),
-                                Prefix
-                        end;
-                    BestMatch -> 
-                        BestMatch
+                case longest_match(ReqKey, Trie, Opts) of
+                    <<>> -> binary:part(ReqKey, 0, 1);
+                    BestMatch -> BestMatch
                 end
             end,
             hb_maps:keys(Req, Opts) -- [<<>>, <<"set-depth">>]
@@ -232,11 +151,7 @@ group_keys(Trie, Req, Opts) ->
                 lists:map(
                     fun(SubReqKey) ->
                         {
-                            binary:part(
-                                SubReqKey,
-                                byte_size(Subkey),
-                                byte_size(SubReqKey) - byte_size(Subkey)
-                            ),
+                            remove_prefix(Subkey, SubReqKey),
                             hb_maps:get(SubReqKey, Req, Opts)
                         }
                     end,
@@ -248,6 +163,13 @@ group_keys(Trie, Req, Opts) ->
     ),
     ?event({grouped_keys, {explicit, Res}}),
     Res.
+
+remove_prefix(Prefix, Key) ->
+    binary:part(
+        Key,
+        byte_size(Prefix),
+        byte_size(Key) - byte_size(Prefix)
+    ).
 
 %%% Tests
 
@@ -439,8 +361,8 @@ commitment_integrity_test() ->
         hb_ao:set(
             InitialMsg,
             #{
-                <<"key1">> => <<"updated_value1">>,
-                <<"key3">> => <<"new_value3">>
+                <<"key1">> => <<"updated-value1">>,
+                <<"key3">> => <<"new-value3">>
             },
             #{}
         ),
@@ -448,7 +370,7 @@ commitment_integrity_test() ->
     UpdatedCommitted = hb_message:committed(UpdatedMsg, all, #{}),
     ?assert(length(UpdatedCommitted) > 0),
     ?assertEqual(
-        <<"updated_value1">>,
+        <<"updated-value1">>,
         hb_ao:get(<<"key1">>, UpdatedMsg, #{})
     ),
     ?assertEqual(
@@ -456,7 +378,7 @@ commitment_integrity_test() ->
         hb_ao:get(<<"key2">>, UpdatedMsg, #{})
     ),
     ?assertEqual(
-        <<"new_value3">>,
+        <<"new-value3">>,
         hb_ao:get(<<"key3">>, UpdatedMsg, #{})
     ).
 
@@ -471,46 +393,60 @@ short_keys_test() ->
         hb_ao:set(
             ShortKeyTrie,
             #{
-                <<"a">> => <<"value_a">>,
-                <<"b">> => <<"value_b">>,
-                <<"0">> => <<"zero_value">>,  % The problematic case mentioned
-                <<"1">> => <<"one_value">>
+                <<"a">> => <<"value-a">>,
+                <<"b">> => <<"value-b">>,
+                <<"0">> => <<"value-0">>,
+                <<"1">> => <<"value-1">>
             },
             #{}
         ),
     % Verify all short keys can be retrieved
     ?assertEqual(
-        <<"value_a">>,
+        <<"value-a">>,
         hb_ao:get(<<"a">>, UpdatedTrie, #{})
     ),
     ?assertEqual(
-        <<"value_b">>,
+        <<"value-b">>,
         hb_ao:get(<<"b">>, UpdatedTrie, #{})
     ),
     ?assertEqual(
-        <<"zero_value">>,
+        <<"value-0">>,
         hb_ao:get(<<"0">>, UpdatedTrie, #{})
     ),
     ?assertEqual(
-        <<"one_value">>,
+        <<"value-1">>,
         hb_ao:get(<<"1">>, UpdatedTrie, #{})
     ).
 
 %% @doc Test that mixed key lengths work with trie depth calculation
 mixed_key_lengths_test() ->
-    Trie = #{
-        <<"device">> => <<"trie@1.0">>
-    },
-    _UpdatedTrie =
+    Trie0 =
         hb_ao:set(
-            Trie,
             #{
-                <<"x">> => <<"single">>,      % 1 byte
-                <<"yz">> => <<"double">>      % 2 bytes  
+                <<"device">> => <<"trie@1.0">>
+            },
+            #{
+                <<"x">> => <<"single">>,
+                <<"yz">> => <<"double">>,
+                <<"abc">> => <<"triple">>
             },
             #{}
         ),
-    ok.
+    ?assertEqual(<<"single">>, hb_ao:get(<<"x">>, Trie0, #{})),
+    ?assertEqual(<<"double">>, hb_ao:get(<<"yz">>, Trie0, #{})),
+    ?assertEqual(<<"triple">>, hb_ao:get(<<"abc">>, Trie0, #{})),
+    % Update a short key value.
+    Trie1 =
+        hb_ao:set(
+            Trie0,
+            #{
+                <<"x">> => <<"updated-single">>,
+                <<"ab">> => <<"overwritten-trie">>
+            },
+            #{}
+        ),
+    ?assertEqual(<<"updated-single">>, hb_ao:get(<<"x">>, Trie1, #{})),
+    ?assertEqual(<<"overwritten-trie">>, hb_ao:get(<<"ab">>, Trie1, #{})).
 
 %% @doc Test trie behavior with custom set-depth
 custom_depth_test() ->
@@ -522,23 +458,23 @@ custom_depth_test() ->
             Trie,
             #{
                 <<"set-depth">> => 1,
-                <<"very_long_key_1">> => <<"value1">>,
-                <<"very_long_key_2">> => <<"value2">>,
-                <<"different_prefix">> => <<"value3">>
+                <<"very-long-key-1">> => <<"value1">>,
+                <<"very-long-key-2">> => <<"value2">>,
+                <<"different-prefix">> => <<"value3">>
             },
             #{}
         ),
     ?assertEqual(
         <<"value1">>, 
-        hb_ao:get(<<"very_long_key_1">>, UpdatedTrie, #{})
+        hb_ao:get(<<"very-long-key-1">>, UpdatedTrie, #{})
     ),
     ?assertEqual(
         <<"value2">>, 
-        hb_ao:get(<<"very_long_key_2">>, UpdatedTrie, #{})
+        hb_ao:get(<<"very-long-key-2">>, UpdatedTrie, #{})
     ),
     ?assertEqual(
         <<"value3">>, 
-        hb_ao:get(<<"different_prefix">>, UpdatedTrie, #{})
+        hb_ao:get(<<"different-prefix">>, UpdatedTrie, #{})
     ).
 
 %% @doc Test error conditions and boundary cases  
@@ -572,15 +508,15 @@ single_byte_key_test() ->
         hb_ao:set(
             Trie,
             #{
-                <<"0">> => <<"zero_balance">>,
-                <<"1">> => <<"one_balance">>,
-                <<"abc">> => <<"normal_key">>
+                <<"0">> => <<"zero-balance">>,
+                <<"1">> => <<"one-balance">>,
+                <<"abc">> => <<"normal-key">>
             },
             #{}
         ),
-    ?assertEqual(<<"zero_balance">>, hb_ao:get(<<"0">>, UpdatedTrie, #{})),
-    ?assertEqual(<<"one_balance">>, hb_ao:get(<<"1">>, UpdatedTrie, #{})),
-    ?assertEqual(<<"normal_key">>, hb_ao:get(<<"abc">>, UpdatedTrie, #{})).
+    ?assertEqual(<<"zero-balance">>, hb_ao:get(<<"0">>, UpdatedTrie, #{})),
+    ?assertEqual(<<"one-balance">>, hb_ao:get(<<"1">>, UpdatedTrie, #{})),
+    ?assertEqual(<<"normal-key">>, hb_ao:get(<<"abc">>, UpdatedTrie, #{})).
 
 %% @doc Test trie structural integrity with deeper nesting
 deep_nesting_test() ->
