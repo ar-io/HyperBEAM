@@ -642,16 +642,7 @@ full_push_test_() ->
         Opts = #{
             process_async_cache => false,
             priv_wallet => hb:wallet(),
-            cache_control => <<"always">>,
-            store => [
-                #{ <<"store-module">> => hb_store_fs, <<"name">> => <<"cache-TEST">> },
-                #{ <<"store-module">> => hb_store_gateway,
-                    <<"store">> => #{
-                        <<"store-module">> => hb_store_fs,
-                        <<"name">> => <<"cache-TEST">>
-                    }
-                }
-            ]
+            cache_control => <<"always">>
         },
         Msg1 = dev_process:test_aos_process(Opts),
         hb_cache:write(Msg1, Opts),
