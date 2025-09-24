@@ -12,7 +12,7 @@
 %%% types of message formats:
 %%% 
 %%%     - Richly typed AO-Core structured messages.
-%%%     - Arweave transations.
+%%%     - Arweave transactions.
 %%%     - ANS-104 data items.
 %%%     - HTTP Signed Messages.
 %%%     - Flat Maps.
