@@ -312,7 +312,7 @@ find_target_path(Msg, Opts) ->
 %% Returns true/false for map templates, or regex match result for binary templates.
 template_matches(ToMatch, Template, _Opts) when is_map(Template) ->
     case hb_message:match(Template, ToMatch, primary) of
-        {value_mismatch, _Key, _Val1, _Val2} -> false;
+        {mismatch, value, _Key, _Val1, _Val2} -> false;
         Match -> Match
     end;
 template_matches(ToMatch, Regex, Opts) when is_binary(Regex) ->
