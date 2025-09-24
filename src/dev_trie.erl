@@ -80,15 +80,26 @@ set(Trie, Req, Opts) ->
         Keys -> lists:max([byte_size(K) || K <- Keys])
     end,
     DefaultDepth = min(?DEFAULT_LAYERS, MaxKeyLength),
-    case hb_maps:get(<<"set-depth">>, Req, DefaultDepth, Opts) of
+    ActualDepth = hb_maps:get(<<"set-depth">>, Req, DefaultDepth, Opts),
+    case ActualDepth of
         0 ->
-            % Insert the keys and values into this level of the trie without
-            % further subdivision. Handle empty keys specially.
+            ?event(debug_trie, {depth_zero_case, {insertable, Insertable}}),
             case maps:take(<<>>, Insertable) of
-                {Value, #{}} -> Value;
-                {_Value, RestInsertable} -> hb_ao:set(Trie, RestInsertable, Opts);
+                {Value, #{}} -> 
+                    ?event(debug_trie, {empty_key_only, {value, Value}}),
+                    Value;
+                {_Value, RestInsertable} -> 
+                    ?event(debug_trie, 
+                        {empty_key_with_others,    
+                            {rest, RestInsertable}
+                        }
+                    ),
+                    hb_ao:set(Trie, RestInsertable, Opts);
                 % ATTENTION NEEDED HERE:
-                error -> hb_ao:set(Trie, Insertable, Opts) % Not sure if this is needed
+                error -> 
+                    Result = hb_ao:set(Trie, Insertable, Opts),
+                    ?event(debug_trie, {hb_ao_set_result, Result}),
+                    Result
             end;
         SetDepth ->
             % Split keys from the request into groups for each sub-branch of the
@@ -99,27 +110,59 @@ set(Trie, Req, Opts) ->
             NewTrie =
                 hb_maps:fold(
                     fun(Subkey, SubReq, Acc) ->
-                        ?event({set, {subkey, Subkey}, {subreq, SubReq}}),
-                        case hb_maps:find(Subkey, Acc, Opts) of
-                            {ok, Subtrie} ->
-                                Acc#{
-                                    Subkey =>
-                                        set(
-                                            Subtrie,
-                                            SubReq#{
-                                                <<"set-depth">> => SetDepth - 1
-                                            },
-                                            Opts
-                                        )
-                                };
-                            error ->
-                                % Create a new empty subtrie for this subkey
-                                Acc#{
+                        case is_map(Acc) of
+                            true ->
+                                case hb_maps:find(Subkey, Acc, Opts) of
+                                    {ok, Subtrie} ->
+                                        case is_map(Subtrie) of
+                                            true ->
+                                                Acc#{
+                                                    Subkey =>
+                                                        set(
+                                                            Subtrie,
+                                                            SubReq#{
+                                                                <<"set-depth">> => SetDepth - 1
+                                                            },
+                                                            Opts
+                                                        )
+                                                };
+                                            false ->
+                                                NewSubReq = 
+                                                    SubReq#{<<"set-depth">> => 0},
+                                                Acc#{
+                                                    Subkey =>
+                                                        set(
+                                                            #{},
+                                                            NewSubReq,
+                                                            Opts
+                                                        )
+                                                }
+                                        end;
+                                    error ->
+                                        SubReqKeys = 
+                                            hb_maps:keys(SubReq, Opts) -- [<<"set-depth">>],
+                                        NewDepth = case SubReqKeys of
+                                            [<<>>] -> 0;  % Only empty key, use depth 0
+                                            _ -> SetDepth - 1  % Normal case
+                                        end,
+                                        Acc#{
+                                            Subkey =>
+                                                set(
+                                                    #{},
+                                                    SubReq#{
+                                                        <<"set-depth">> => NewDepth
+                                                    },
+                                                    Opts
+                                                )
+                                        }
+                                end;
+                            false ->
+                                #{
                                     Subkey =>
                                         set(
                                             #{},
                                             SubReq#{
-                                                <<"set-depth">> => SetDepth - 1
+                                                <<"set-depth">> => 0
                                             },
                                             Opts
                                         )
@@ -167,12 +210,21 @@ group_keys(Trie, Req, Opts) ->
     SubReqs = 
         maps:groups_from_list(
             fun(ReqKey) ->
-                case longest_match(ReqKey, Trie, Opts) of
-                    <<>> -> binary:part(ReqKey, 0, 1);
-                    BestMatch -> BestMatch
+                LongestMatch = longest_match(ReqKey, Trie, Opts),
+                case LongestMatch of
+                    <<>> -> 
+                        case ReqKey of
+                            <<>> -> 
+                                ReqKey;
+                            _ ->
+                                Prefix = binary:part(ReqKey, 0, 1),
+                                Prefix
+                        end;
+                    BestMatch -> 
+                        BestMatch
                 end
             end,
-            hb_maps:keys(Req, Opts) -- [<<>>]
+            hb_maps:keys(Req, Opts) -- [<<>>, <<"set-depth">>]
         ),
     Res = maps:map(
         fun(Subkey, SubKeys) ->
