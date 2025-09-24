@@ -90,11 +90,12 @@ do_push(PrimaryProcess, Assignment, Opts) ->
         }
     ),
     ?event(push, {push_computing_outbox, {process_id, ID}, {slot, Slot}}),
-    {Status, Result} = hb_ao:resolve(
-        {as, <<"process@1.0">>, PrimaryProcess},
-        #{ <<"path">> => <<"compute/results">>, <<"slot">> => Slot },
-        Opts#{ hashpath => ignore }
-    ),
+    {Status, Result} =
+        hb_ao:resolve(
+            {as, <<"process@1.0">>, PrimaryProcess},
+            #{ <<"path">> => <<"compute/results">>, <<"slot">> => Slot },
+            Opts#{ hashpath => ignore }
+        ),
     % Determine if we should include the full compute result in our response.
     IncludeDepth = hb_ao:get(<<"result-depth">>, Assignment, 1, Opts),
     AdditionalRes =

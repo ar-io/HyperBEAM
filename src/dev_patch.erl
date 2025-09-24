@@ -112,7 +112,17 @@ move(Mode, Msg1, Msg2, Opts) ->
                             Device = hb_ao:get(<<"device">>, Msg, Opts)
                                 == <<"patch@1.0">>,
                             if Method orelse Device ->
-                                {PatchAcc#{Key => Msg}, NewSourceAcc};
+                                {
+                                    PatchAcc#{
+                                        Key =>
+                                            hb_maps:without(
+                                                [<<"commitments">>, <<"Tags">>],
+                                                Msg,
+                                                Opts
+                                            )
+                                    },
+                                    NewSourceAcc
+                                };
                             true ->
                                 {PatchAcc, NewSourceAcc#{ Key => Msg }}
                             end

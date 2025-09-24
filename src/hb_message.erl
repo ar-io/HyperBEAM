@@ -452,7 +452,7 @@ match(Map1, Map2, Mode) ->
     match(Map1, Map2, Mode, #{}).
 match(Map1, Map2, Mode, Opts) ->
     try unsafe_match(Map1, Map2, Mode, [], Opts)
-    catch _:Details -> Details
+    catch _:Details:St -> {error, {Details, {trace, St}}}
     end.
 
 %% @doc Match two maps, returning `true' if they match, or throwing an error
