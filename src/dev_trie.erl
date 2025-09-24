@@ -341,8 +341,16 @@ large_balance_table_test() ->
             #{}
         ),
     ?event(debug_trie, {created_trie, maps:size(BaseTrie)}),
-    UpdateBalanceA = lists:nth(rand:uniform(TotalBalances), maps:keys(Balances)),
-    UpdateBalanceB = lists:nth(rand:uniform(TotalBalances), maps:keys(Balances)),
+    UpdateBalanceA = 
+        lists:nth(
+            rand:uniform(TotalBalances), 
+            maps:keys(Balances)
+        ),
+    UpdateBalanceB = 
+        lists:nth(
+            rand:uniform(TotalBalances), 
+            maps:keys(Balances)
+        ),
     UpdatedTrie =
         hb_ao:set(
             BaseTrie,
@@ -364,3 +372,241 @@ large_balance_table_test() ->
         hb_ao:get(UpdateBalanceB, UpdatedTrie, #{})
     ),
     ?event(debug_trie, {checked_update, UpdateBalanceB}).
+
+%% @doc Test robust updating of existing terminal values plus adding new ones
+update_existing_values_test() ->
+    InitialTrie = #{
+        <<"device">> => <<"trie@1.0">>,
+        <<"alice">> => <<"100">>,
+        <<"bob">> => <<"200">>,
+        <<"charlie">> => <<"300">>
+    },
+    UpdatedTrie =
+        hb_ao:set(
+            InitialTrie,
+            #{
+                <<"alice">> => <<"150">>,    % Update existing terminal value
+                <<"bob">> => <<"250">>,      % Update another existing value  
+                <<"diana">> => <<"400">>,    % Add completely new value
+                <<"eve">> => <<"500">>,      % Add another new value
+                <<"frank">> => <<"600">>     % Add third new value
+            },
+            #{}
+        ),
+    ?assertEqual(<<"150">>, hb_ao:get(<<"alice">>, UpdatedTrie, #{})),
+    ?assertEqual(<<"250">>, hb_ao:get(<<"bob">>, UpdatedTrie, #{})),
+    ?assertEqual(<<"400">>, hb_ao:get(<<"diana">>, UpdatedTrie, #{})),
+    ?assertEqual(<<"500">>, hb_ao:get(<<"eve">>, UpdatedTrie, #{})),
+    ?assertEqual(<<"600">>, hb_ao:get(<<"frank">>, UpdatedTrie, #{})),    
+    % Verify charlie still exists (wasn't touched in this update)
+    ?assertEqual(<<"300">>, hb_ao:get(<<"charlie">>, UpdatedTrie, #{})),
+    % Test another round of updates to ensure robustness
+    FinalTrie =
+        hb_ao:set(
+            UpdatedTrie,
+            #{
+                <<"alice">> => <<"175">>,    % Update alice again
+                <<"frank">> => <<"600">>     % Add yet another new value
+            },
+            #{}
+        ),
+    % Verify the second round of updates
+    AliceResult = hb_ao:get(<<"alice">>, FinalTrie, #{}),
+    FrankResult = hb_ao:get(<<"frank">>, FinalTrie, #{}),
+    ?event(debug_trie, {alice_retrieval, AliceResult}),
+    ?event(debug_trie, {frank_retrieval, FrankResult}),
+    ?assertEqual(<<"175">>, AliceResult),
+    ?assertEqual(<<"600">>, FrankResult),
+    % Ensure all other values are still intact
+    ?assertEqual(<<"250">>, hb_ao:get(<<"bob">>, FinalTrie, #{})),
+    ?assertEqual(<<"300">>, hb_ao:get(<<"charlie">>, FinalTrie, #{})),
+    ?assertEqual(<<"400">>, hb_ao:get(<<"diana">>, FinalTrie, #{})),
+    ?assertEqual(<<"500">>, hb_ao:get(<<"eve">>, FinalTrie, #{})).
+
+%% @doc Test commitment integrity after setting and re-setting keys
+commitment_integrity_test() ->
+    Wallet = hb:wallet(),
+    InitialMsg = hb_message:commit(#{
+        <<"device">> => <<"trie@1.0">>,
+        <<"key1">> => <<"value1">>,
+        <<"key2">> => <<"value2">>
+    }, Wallet),
+    % Verify initial commitments exist
+    InitialCommitted = hb_message:committed(InitialMsg, all, #{}),
+    ?assert(length(InitialCommitted) > 0),
+    % Update the trie with individual key updates
+    UpdatedMsg =
+        hb_ao:set(
+            InitialMsg,
+            #{
+                <<"key1">> => <<"updated_value1">>,
+                <<"key3">> => <<"new_value3">>
+            },
+            #{}
+        ),
+    % Verify commitments are maintained after update
+    UpdatedCommitted = hb_message:committed(UpdatedMsg, all, #{}),
+    ?assert(length(UpdatedCommitted) > 0),
+    ?assertEqual(
+        <<"updated_value1">>,
+        hb_ao:get(<<"key1">>, UpdatedMsg, #{})
+    ),
+    ?assertEqual(
+        <<"value2">>,
+        hb_ao:get(<<"key2">>, UpdatedMsg, #{})
+    ),
+    ?assertEqual(
+        <<"new_value3">>,
+        hb_ao:get(<<"key3">>, UpdatedMsg, #{})
+    ).
+
+%% @doc Test keys shorter than the default prefix depth
+short_keys_test() ->
+    % Test single-byte keys (shorter than DEFAULT_LAYERS = 2)
+    ShortKeyTrie = #{
+        <<"device">> => <<"trie@1.0">>
+    },
+    % Insert single-byte keys
+    UpdatedTrie =
+        hb_ao:set(
+            ShortKeyTrie,
+            #{
+                <<"a">> => <<"value_a">>,
+                <<"b">> => <<"value_b">>,
+                <<"0">> => <<"zero_value">>,  % The problematic case mentioned
+                <<"1">> => <<"one_value">>
+            },
+            #{}
+        ),
+    % Verify all short keys can be retrieved
+    ?assertEqual(
+        <<"value_a">>,
+        hb_ao:get(<<"a">>, UpdatedTrie, #{})
+    ),
+    ?assertEqual(
+        <<"value_b">>,
+        hb_ao:get(<<"b">>, UpdatedTrie, #{})
+    ),
+    ?assertEqual(
+        <<"zero_value">>,
+        hb_ao:get(<<"0">>, UpdatedTrie, #{})
+    ),
+    ?assertEqual(
+        <<"one_value">>,
+        hb_ao:get(<<"1">>, UpdatedTrie, #{})
+    ).
+
+%% @doc Test that mixed key lengths work with trie depth calculation
+mixed_key_lengths_test() ->
+    Trie = #{
+        <<"device">> => <<"trie@1.0">>
+    },
+    _UpdatedTrie =
+        hb_ao:set(
+            Trie,
+            #{
+                <<"x">> => <<"single">>,      % 1 byte
+                <<"yz">> => <<"double">>      % 2 bytes  
+            },
+            #{}
+        ),
+    ok.
+
+%% @doc Test trie behavior with custom set-depth
+custom_depth_test() ->
+    Trie = #{
+        <<"device">> => <<"trie@1.0">>
+    },
+    UpdatedTrie =
+        hb_ao:set(
+            Trie,
+            #{
+                <<"set-depth">> => 1,
+                <<"very_long_key_1">> => <<"value1">>,
+                <<"very_long_key_2">> => <<"value2">>,
+                <<"different_prefix">> => <<"value3">>
+            },
+            #{}
+        ),
+    ?assertEqual(
+        <<"value1">>, 
+        hb_ao:get(<<"very_long_key_1">>, UpdatedTrie, #{})
+    ),
+    ?assertEqual(
+        <<"value2">>, 
+        hb_ao:get(<<"very_long_key_2">>, UpdatedTrie, #{})
+    ),
+    ?assertEqual(
+        <<"value3">>, 
+        hb_ao:get(<<"different_prefix">>, UpdatedTrie, #{})
+    ).
+
+%% @doc Test error conditions and boundary cases  
+error_conditions_test() ->
+    Trie = #{
+        <<"device">> => <<"trie@1.0">>
+    },
+    ?assertEqual(
+        not_found,
+        hb_ao:get(<<"nonexistent">>, Trie, #{})
+    ),
+    ZeroDepthTrie =
+        hb_ao:set(
+            Trie,
+            #{
+                <<"set-depth">> => 0,
+                <<"key1">> => <<"value1">>,
+                <<"key2">> => <<"value2">>
+            },
+            #{}
+        ),
+    ?assertEqual(<<"value1">>, hb_ao:get(<<"key1">>, ZeroDepthTrie, #{})),
+    ?assertEqual(<<"value2">>, hb_ao:get(<<"key2">>, ZeroDepthTrie, #{})). 
+
+%% @doc Test the critical single-byte key case (like "0" in AO token)
+single_byte_key_test() ->
+    Trie = #{
+        <<"device">> => <<"trie@1.0">>
+    },
+    UpdatedTrie =
+        hb_ao:set(
+            Trie,
+            #{
+                <<"0">> => <<"zero_balance">>,
+                <<"1">> => <<"one_balance">>,
+                <<"abc">> => <<"normal_key">>
+            },
+            #{}
+        ),
+    ?assertEqual(<<"zero_balance">>, hb_ao:get(<<"0">>, UpdatedTrie, #{})),
+    ?assertEqual(<<"one_balance">>, hb_ao:get(<<"1">>, UpdatedTrie, #{})),
+    ?assertEqual(<<"normal_key">>, hb_ao:get(<<"abc">>, UpdatedTrie, #{})).
+
+%% @doc Test trie structural integrity with deeper nesting
+deep_nesting_test() ->
+    Trie = #{
+        <<"device">> => <<"trie@1.0">>
+    },
+    Step1 =
+        hb_ao:set(
+            Trie,
+            #{ <<"level1">> => <<"value1">> },
+            #{}
+        ),
+    
+    Step2 =
+        hb_ao:set(
+            Step1,
+            #{ <<"level2">> => <<"value2">> },
+            #{}
+        ),
+    ?assertEqual(<<"value1">>, hb_ao:get(<<"level1">>, Step2, #{})),
+    ?assertEqual(<<"value2">>, hb_ao:get(<<"level2">>, Step2, #{})),
+    Step3 =
+        hb_ao:set(
+            Trie,
+            #{ <<"level1a">> => <<"value1a">>, <<"level1b">> => <<"value1b">> },
+            #{}
+        ),
+    ?assertEqual(<<"value1a">>, hb_ao:get(<<"level1a">>, Step3, #{})),
+    ?assertEqual(<<"value1b">>, hb_ao:get(<<"level1b">>, Step3, #{})).
