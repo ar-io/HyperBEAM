@@ -1,10 +1,22 @@
 %%% @doc Implements a multi-layer prefix tree for efficiently storing large
 %%% datasets in nested messages.
 %%% 
-%%% Each element of the tree is available using simply resolving its name,
+%%% Each element of the trie is available using simply resolving its name,
 %%% despite the underlying data structure. Additionally, calling the AO-Core
 %%% `set' function will correctly handle putting the values into the correct
 %%% locations in the tree, re-generating only the necessary identifiers.
+%%% 
+%%% In this implementation of the `trie' structure, `set'ting a value over a
+%%% node in the tree that would otherwise be a prefix branch will fully replace
+%%% any existing values at that node. For example:
+%%% 
+%%% ```
+%%%     Trie = #{ aaa => 1, aab => 2, aba => 3 }
+%%%     set(Trie, #{ aa => 4 }) => #{ aa => 4, aba => 3 }
+%%% ```
+%%% 
+%%% The depth of the prefix trie can be configured by using the `set-depth' key
+%%% in the `set' request.
 -module(dev_trie).
 -export([info/0, get/3, set/3]).
 -include_lib("eunit/include/eunit.hrl").
