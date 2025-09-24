@@ -452,7 +452,10 @@ match(Map1, Map2, Mode) ->
     match(Map1, Map2, Mode, #{}).
 match(Map1, Map2, Mode, Opts) ->
     try unsafe_match(Map1, Map2, Mode, [], Opts)
-    catch _:Details -> Details
+    catch
+        throw:{mismatch, Type, Path, Val1, Val2} ->
+            {mismatch, Type, Path, Val1, Val2};
+        _:Details:St -> {error, {Details, {trace, St}}}
     end.
 
 %% @doc Match two maps, returning `true' if they match, or throwing an error
@@ -518,14 +521,15 @@ unsafe_match(Map1, Map2, Mode, Path, Opts) ->
                                         {'_', '_'} -> true;
                                         _ ->
                                             throw(
-                                                {value_mismatch,
+                                                {mismatch,
+                                                    value,
                                                     hb_format:short_id(
                                                         hb_path:to_binary(
                                                             Path ++ [Key]
                                                         )
                                                     ),
-                                                    {val1, Val1},
-                                                    {val2, Val2}
+                                                    Val1,
+                                                    Val2
                                                 }
                                             )
                                     end
@@ -536,10 +540,11 @@ unsafe_match(Map1, Map2, Mode, Path, Opts) ->
             );
         false ->
             throw(
-                {keys_mismatch,
-                    {path, hb_format:short_id(hb_path:to_binary(Path))},
-                    {keys1, Keys1},
-                    {keys2, Keys2}
+                {mismatch,
+                    keys,
+                    hb_format:short_id(hb_path:to_binary(Path)),
+                    Keys1,
+                    Keys2
                 }
             )
     end.

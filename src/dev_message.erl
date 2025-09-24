@@ -690,11 +690,20 @@ set(Message1, NewValuesMsg, Opts) ->
                 true ->
                     ?event(message_set, {set_keys_matched, {merged, Merged}}),
                     {ok, Merged};
+                % {error, {Details, {trace, Stacktrace}}} ->
+                %     erlang:raise(error, Details, Stacktrace);
+                % {mismatch, Type, Path, Val1, Val2} ->
+                %     ?event(
+                %         set_conflict,
+                %         {set_conflict_removing_commitments,
+                %             {merged, Merged},
+                %             {mismatch, Type},
+                %             {path, Path},
+                %             {expected, Val1},
+                %             {received, Val2}
+                %         }
+                %     ),
                 _ ->
-                    ?event(
-                        message_set,
-                        {set_conflict_removing_commitments, {merged, Merged}}
-                    ),
                     {ok, hb_maps:without([<<"commitments">>], Merged, Opts)}
             end
     end.
