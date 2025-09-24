@@ -224,7 +224,10 @@ ensure_started(Opts) ->
                                                 )
                                             },
 											{"DISABLE_PROCESS_FILE_CHECKPOINT_CREATION", "false"},
-											{"PROCESS_MEMORY_FILE_CHECKPOINTS_DIR", CheckpointDir}
+											{"PROCESS_MEMORY_FILE_CHECKPOINTS_DIR", CheckpointDir},
+                                            {"PROCESS_MEMORY_CACHE_MAX_SIZE", "12_000_000_000"},
+                                            {"PROCESS_WASM_SUPPORTED_EXTENSIONS", "WeaveDrive"},
+                                            {"PROCESS_WASM_MEMORY_MAX_LIMIT", "24_000_000_000"}
                                         ]
                                     }
                                 ]
