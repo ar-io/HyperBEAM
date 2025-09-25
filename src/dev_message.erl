@@ -89,7 +89,7 @@ id(Base, _, NodeOpts) when is_binary(Base) ->
     % format of the message ID return.
     {ok, hb_util:human_id(hb_path:hashpath(Base, NodeOpts))};
 id(RawBase, Req, NodeOpts) ->
-    % Ensure that the base message is a normalized before proceeding.
+    % Ensure that the base message is normalized before proceeding.
     IDOpts = NodeOpts#{ linkify_mode => discard },
     Base =
         ensure_commitments_loaded(
