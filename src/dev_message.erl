@@ -80,7 +80,7 @@ index(Msg, Req, Opts) ->
 %% (`httpsig@1.0') is used.
 %% 
 %% Note: This function _does not_ use AO-Core's `get/3' function, as it
-%% as it would require significant computation. We may want to change this
+%% would require significant computation. We may want to change this
 %% if/when non-map message structures are created.
 id(Base) -> id(Base, #{}).
 id(Base, Req) -> id(Base, Req, #{}).
