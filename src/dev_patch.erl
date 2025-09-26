@@ -158,10 +158,24 @@ move(Mode, Msg1, Msg2, Opts) ->
                     maps:fold(
                         fun(_, Patch, MsgN) ->
                             ?event({patching, {patch, Patch}, {before, MsgN}}),
+                            WithoutEmpty =
+                                hb_util:deep_set(
+                                    [<<"balances">>, <<"">>],
+                                    unset,
+                                    Patch,
+                                    Opts
+                                ),
+                            WithoutZero =
+                                hb_util:deep_set(
+                                    [<<"balances">>, <<"0">>],
+                                    unset,
+                                    WithoutEmpty,
+                                    Opts
+                                ),
                             Res =
                                 hb_ao:set(
                                     MsgN,
-                                    maps:without([<<"method">>], Patch),
+                                    maps:without([<<"method">>], WithoutZero),
                                     Opts
                                 ),
                             ?event({patched, {'after', Res}}),
