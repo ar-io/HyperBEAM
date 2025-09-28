@@ -388,18 +388,10 @@ parse_inlined_key_val(Bin, Opts) ->
     case part([$=, $&], Bin) of
         {no_match, K, <<>>} -> {K, true};
         {$=, K, RawV} ->
-            V = unquote(RawV),
+            V = hb_util:unquote(RawV),
             {_, Key, Val} = maybe_typed(K, maybe_subpath(V, Opts), Opts),
             {Key, Val}
     end.
-
-%% @doc Unquote a string.
-unquote(<<"\"", Inner/binary>>) ->
-    case binary:last(Inner) of
-        $" -> binary:part(Inner, 0, byte_size(Inner) - 1);
-        _ -> Inner
-    end;
-unquote(Bin) -> Bin.
 
 %% @doc Attempt Cowboy URL decode, then sanitize the result.
 decode_string(B) ->

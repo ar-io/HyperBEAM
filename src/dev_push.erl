@@ -516,7 +516,7 @@ apply_security(authority, Msg, TargetProcess, Codec, Opts) ->
             ?event(push, {found_authority, {authority, Authority}}, Opts),
             commit_result(
                 Msg,
-                hb_util:binary_to_addresses(Authority),
+                hb_util:binary_to_strings(Authority),
                 Codec,
                 Opts
             )
