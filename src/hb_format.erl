@@ -36,7 +36,7 @@ print(X, Info, Opts) ->
     ),
     X.
 print(X, Mod, Func, LineNum) ->
-    print(X, format_debug_trace(Mod, Func, LineNum, #{}), #{}).
+    print(X, debug_trace(Mod, Func, LineNum, #{}), #{}).
 print(X, Mod, Func, LineNum, Opts) ->
     Now = erlang:system_time(millisecond),
     Last = erlang:put(last_debug_print, Now),
@@ -57,7 +57,7 @@ print(X, Mod, Func, LineNum, Opts) ->
                                 )
                             )
                     end,
-                    format_debug_trace(Mod, Func, LineNum, Opts)
+                    debug_trace(Mod, Func, LineNum, Opts)
                 ]
             )
         ),
@@ -73,7 +73,7 @@ server_id(Opts) ->
     end.
 
 %% @doc Generate the appropriate level of trace for a given call.
-format_debug_trace(Mod, Func, Line, Opts) ->
+debug_trace(Mod, Func, Line, Opts) ->
     case hb_opts:get(debug_print_trace, false, #{}) of
         short ->
             Trace =
@@ -84,7 +84,7 @@ format_debug_trace(Mod, Func, Line, Opts) ->
                         % and line number to the end to show exactly where in
                         % the handler-flow the event arose.
                         [
-                            hb_util:bin(format_trace_element({Mod, Line}))
+                            hb_util:bin(trace_element({Mod, Line}))
                         |
                             get_trace(ao)
                         ]
@@ -98,7 +98,7 @@ format_debug_trace(Mod, Func, Line, Opts) ->
 term(X) -> term(X, #{}).
 term(X, Opts) -> term(X, Opts, 0).
 term(X, Opts, Indent) ->
-    try do_debug_fmt(X, Opts, Indent)
+    try do_term(X, Opts, Indent)
     catch A:B:C ->
         Mode = hb_opts:get(mode, prod, Opts),
         PrintFailPreference = hb_opts:get(debug_print_fail_mode, quiet, Opts),
@@ -113,7 +113,7 @@ term(X, Opts, Indent) ->
                         A,
                         B,
                         hb_util:bin(
-                            format_trace(
+                            trace(
                                 C,
                                 hb_opts:get(stack_print_prefixes, [], #{})
                             )
@@ -127,14 +127,14 @@ term(X, Opts, Indent) ->
         end
     end.
 
-do_debug_fmt(
+do_term(
     { { {rsa, _PublicExpnt1}, _Priv1, _Priv2 },
       { {rsa, _PublicExpnt2}, Pub }
     },
     Opts, Indent
 ) ->
-    format_address(Pub, Opts, Indent);
-do_debug_fmt(
+    address(Pub, Opts, Indent);
+do_term(
     { AtomValue,
       {
         { {rsa, _PublicExpnt1}, _Priv1, _Priv2 },
@@ -143,29 +143,29 @@ do_debug_fmt(
     },
     Opts, Indent
 ) ->
-    AddressString = format_address(Pub, Opts, Indent),
+    AddressString = address(Pub, Opts, Indent),
     indent("~p: ~s", [AtomValue, AddressString], Opts, Indent);
-do_debug_fmt({explicit, X}, Opts, Indent) ->
+do_term({explicit, X}, Opts, Indent) ->
     indent("[Explicit:] ~p", [X], Opts, Indent);
-do_debug_fmt({string, X}, Opts, Indent) ->
+do_term({string, X}, Opts, Indent) ->
     indent("~s", [X], Opts, Indent);
-do_debug_fmt({trace, Trace}, Opts, Indent) ->
+do_term({trace, Trace}, Opts, Indent) ->
     indent("~n~s", [trace(Trace)], Opts, Indent);
-do_debug_fmt({as, undefined, Msg}, Opts, Indent) ->
+do_term({as, undefined, Msg}, Opts, Indent) ->
     "\n" ++ indent("Subresolve => ", [], Opts, Indent) ++
         maybe_multiline(Msg, Opts, Indent + 1);
-do_debug_fmt({as, DevID, Msg}, Opts, Indent) ->
+do_term({as, DevID, Msg}, Opts, Indent) ->
     "\n" ++ indent("Subresolve as ~s => ", [DevID], Opts, Indent) ++
         maybe_multiline(Msg, Opts, Indent + 1);
-do_debug_fmt({X, Y}, Opts, Indent) when is_atom(X) and is_atom(Y) ->
+do_term({X, Y}, Opts, Indent) when is_atom(X) and is_atom(Y) ->
     indent("~p: ~p", [X, Y], Opts, Indent);
-do_debug_fmt({X, Y}, Opts, Indent) when is_record(Y, tx) ->
+do_term({X, Y}, Opts, Indent) when is_record(Y, tx) ->
     indent("~p: [TX item]~n~s",
         [X, ar_bundles:format(Y, Indent + 1, Opts)],
         Opts,
         Indent
     );
-do_debug_fmt({X, Y}, Opts, Indent) when is_map(Y); is_list(Y) ->
+do_term({X, Y}, Opts, Indent) when is_map(Y); is_list(Y) ->
     Formatted = maybe_multiline(Y, Opts, Indent + 1),
     indent(
         case is_binary(X) of
@@ -182,7 +182,7 @@ do_debug_fmt({X, Y}, Opts, Indent) when is_map(Y); is_list(Y) ->
         Opts,
         Indent
     );
-do_debug_fmt({X, Y}, Opts, Indent) ->
+do_term({X, Y}, Opts, Indent) ->
     indent(
         "~s: ~s",
         [
@@ -192,32 +192,32 @@ do_debug_fmt({X, Y}, Opts, Indent) ->
         Opts,
         Indent
     );
-do_debug_fmt(TX, Opts, Indent) when is_record(TX, tx) ->
+do_term(TX, Opts, Indent) when is_record(TX, tx) ->
     indent("[TX item]~n~s",
         [ar_bundles:format(TX, Indent, Opts)],
         Opts,
         Indent
     );
-do_debug_fmt(MaybePrivMap, Opts, Indent) when is_map(MaybePrivMap) ->
+do_term(MaybePrivMap, Opts, Indent) when is_map(MaybePrivMap) ->
     Map = hb_private:reset(MaybePrivMap),
-    case maybe_format_short(Map, Opts, Indent) of
+    case maybe_short(Map, Opts, Indent) of
         {ok, SimpleFmt} -> SimpleFmt;
         error ->
             "\n" ++ lists:flatten(message(Map, Opts, Indent))
     end;
-do_debug_fmt(Tuple, Opts, Indent) when is_tuple(Tuple) ->
-    format_tuple(Tuple, Opts, Indent);
-do_debug_fmt(X, Opts, Indent) when is_binary(X) ->
+do_term(Tuple, Opts, Indent) when is_tuple(Tuple) ->
+    tuple(Tuple, Opts, Indent);
+do_term(X, Opts, Indent) when is_binary(X) ->
     indent("~s", [binary(X)], Opts, Indent);
-do_debug_fmt(Str = [X | _], Opts, Indent) when is_integer(X) andalso X >= 32 andalso X < 127 ->
+do_term(Str = [X | _], Opts, Indent) when is_integer(X) andalso X >= 32 andalso X < 127 ->
     indent("~s", [Str], Opts, Indent);
-do_debug_fmt(MsgList, Opts, Indent) when is_list(MsgList) ->
-    format_list(MsgList, Opts, Indent);
-do_debug_fmt(X, Opts, Indent) ->
+do_term(MsgList, Opts, Indent) when is_list(MsgList) ->
+    list(MsgList, Opts, Indent);
+do_term(X, Opts, Indent) ->
     indent("~80p", [X], Opts, Indent).
 
 %% @doc If the user attempts to print a wallet, format it as an address.
-format_address(Wallet, Opts, Indent) ->
+address(Wallet, Opts, Indent) ->
     indent("Wallet [Addr: ~s]",
         [short_id(hb_util:human_id(ar_wallet:to_address(Wallet)))], 
         Opts, 
@@ -225,7 +225,7 @@ format_address(Wallet, Opts, Indent) ->
     ).
 
 %% @doc Helper function to format tuples with arity greater than 2.
-format_tuple(Tuple, Opts, Indent) ->
+tuple(Tuple, Opts, Indent) ->
     to_lines(lists:map(
         fun(Elem) ->
             term(Elem, Opts, Indent)
@@ -235,22 +235,22 @@ format_tuple(Tuple, Opts, Indent) ->
 
 %% @doc Format a list. Comes in three forms: all on one line, individual items
 %% on their own line, or each item a multi-line string.
-format_list(MsgList, Opts, Indent) ->
-    case maybe_format_short(MsgList, Opts, Indent) of
+list(MsgList, Opts, Indent) ->
+    case maybe_short(MsgList, Opts, Indent) of
         {ok, SimpleFmt} -> SimpleFmt;
         error ->
             "\n" ++
                 indent("List [~w] {", [length(MsgList)], Opts, Indent) ++
-                format_list_lines(MsgList, Opts, Indent)
+                list_lines(MsgList, Opts, Indent)
     end.
 
 %% @doc Format a list as a multi-line string.
-format_list_lines(MsgList, Opts, Indent) ->
+list_lines(MsgList, Opts, Indent) ->
     Numbered = hb_util:number(MsgList),
     Lines =
         lists:map(
             fun({N, Msg}) ->
-                format_list_item(N, Msg, Opts, Indent)
+                list_item(N, Msg, Opts, Indent)
             end,
             Numbered
         ),
@@ -278,7 +278,7 @@ format_list_lines(MsgList, Opts, Indent) ->
             "\n" ++
             lists:flatten(lists:map(
                 fun({N, Msg}) ->
-                    {_, Line} = format_list_item(multiline, N, Msg, Opts, Indent),
+                    {_, Line} = list_item(multiline, N, Msg, Opts, Indent),
                     Line
                 end,
                 Numbered
@@ -286,18 +286,18 @@ format_list_lines(MsgList, Opts, Indent) ->
     end.
 
 %% @doc Format a single element of a list.
-format_list_item(N, Msg, Opts, Indent) ->
-    case format_list_item(short, N, Msg, Opts, Indent) of
+list_item(N, Msg, Opts, Indent) ->
+    case list_item(short, N, Msg, Opts, Indent) of
         {short, String} -> {short, String};
-        error -> format_list_item(multiline, N, Msg, Opts, Indent)
+        error -> list_item(multiline, N, Msg, Opts, Indent)
     end.
-format_list_item(short, N, Msg, Opts, Indent) ->
-    case maybe_format_short(Msg, Opts, Indent) of
+list_item(short, N, Msg, Opts, Indent) ->
+    case maybe_short(Msg, Opts, Indent) of
         {ok, SimpleFmt} ->
             {short, indent("~s => ~s~n", [N, SimpleFmt], Opts, Indent + 1)};
         error -> error
     end;
-format_list_item(multiline, N, Msg, Opts, Indent) ->
+list_item(multiline, N, Msg, Opts, Indent) ->
     Formatted =
         case is_multiline(Base = term(Msg, Opts, Indent + 2)) of
             true -> Base;
@@ -448,7 +448,7 @@ binary(Bin) ->
 %% @doc Format a map as either a single line or a multi-line string depending
 %% on the value of the `debug_print_map_line_threshold' runtime option.
 maybe_multiline(X, Opts, Indent) ->
-    case maybe_format_short(X, Opts, Indent) of
+    case maybe_short(X, Opts, Indent) of
         {ok, SimpleFmt} -> SimpleFmt;
         error ->
             "\n" ++ lists:flatten(message(X, Opts, Indent))
@@ -456,7 +456,7 @@ maybe_multiline(X, Opts, Indent) ->
 
 %% @doc Attempt to generate a short formatting of a message, using the given
 %% node options.
-maybe_format_short(X, Opts, _Indent) ->
+maybe_short(X, Opts, _Indent) ->
     MaxLen = hb_opts:get(debug_print_map_line_threshold, 100, Opts),
     SimpleFmt =
         case is_binary(X) of
@@ -503,24 +503,24 @@ print_trace(Stack, Label, CallerInfo) ->
 %% option. At the first frame that does not match a prefix in the
 %% `stack_print_prefixes' option, the rest of the stack is not formatted.
 trace(Stack) ->
-    format_trace(Stack, hb_opts:get(stack_print_prefixes, [], #{})).
-format_trace([], _) -> [];
-format_trace([Item|Rest], Prefixes) ->
+    trace(Stack, hb_opts:get(stack_print_prefixes, [], #{})).
+trace([], _) -> [];
+trace([Item|Rest], Prefixes) ->
     case element(1, Item) of
         Atom when is_atom(Atom) ->
             case true of %is_hb_module(Atom, Prefixes) of
                 true ->
                     [
-                        format_trace(Item, Prefixes) |
-                        format_trace(Rest, Prefixes)
+                        trace(Item, Prefixes) |
+                        trace(Rest, Prefixes)
                     ];
                 false -> []
             end;
         _ -> []
     end;
-format_trace({Func, ArityOrTerm, Extras}, Prefixes) ->
-    format_trace({no_module, Func, ArityOrTerm, Extras}, Prefixes);
-format_trace({Mod, Func, ArityOrTerm, Extras}, _Prefixes) ->
+trace({Func, ArityOrTerm, Extras}, Prefixes) ->
+    trace({no_module, Func, ArityOrTerm, Extras}, Prefixes);
+trace({Mod, Func, ArityOrTerm, Extras}, _Prefixes) ->
     ExtraMap = hb_maps:from_list(Extras),
     indent(
         "~p:~p/~p [~s]~n",
@@ -554,7 +554,7 @@ trace_to_list(Trace) ->
         fun(TraceItem) when is_binary(TraceItem) ->
             {true, TraceItem};
            (TraceItem) ->
-            Formatted = format_trace_element(TraceItem),
+            Formatted = trace_element(TraceItem),
             case hb_util:is_hb_module(Formatted, Prefixes) of
                 true -> {true, Formatted};
                 false -> false
@@ -571,12 +571,12 @@ trace_short(Trace) when is_list(Trace) ->
 
 %% @doc Format a trace element in form `mod:line' or `mod:func' for Erlang
 %% traces, or their raw form for others.
-format_trace_element(Bin) when is_binary(Bin) -> Bin;
-format_trace_element({Mod, Line}) ->
+trace_element(Bin) when is_binary(Bin) -> Bin;
+trace_element({Mod, Line}) ->
     lists:flatten(io_lib:format("~p:~p", [Mod, Line]));
-format_trace_element({Mod, _, _, [{file, _}, {line, Line}|_]}) ->
+trace_element({Mod, _, _, [{file, _}, {line, Line}|_]}) ->
     lists:flatten(io_lib:format("~p:~p", [Mod, Line]));
-format_trace_element({Mod, Func, _ArityOrTerm, _Extras}) ->
+trace_element({Mod, Func, _ArityOrTerm, _Extras}) ->
     lists:flatten(io_lib:format("~p:~p", [Mod, Func])).
 
 %% @doc Utility function to help macro `?trace/0' remove the first frame of the
