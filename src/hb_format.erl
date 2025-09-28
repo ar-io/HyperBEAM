@@ -628,7 +628,7 @@ message(RawMap, Opts, Indent) when is_map(RawMap) ->
     % 1. `false' -- never show priv
     % 2. `if_present' -- show priv only if there are keys inside
     % 2. `always' -- always show priv
-    FooterKeys =
+    PrivKeys =
         case {FilterPriv, MainPriv} of
             {false, _} -> [];
             {if_present, #{}} -> [];
@@ -739,18 +739,42 @@ message(RawMap, Opts, Indent) when is_map(RawMap) ->
             {<<"commitments">>, ValOrUndef(<<"commitments">>)}
         ],
     % Concatenate the path and device rows with the rest of the key values.
-    UnsortedGeneralKeyVals =
+    UnsortedGeneralKVs =
         maps:to_list(
             maps:without(
                 [ PriorityKey || {PriorityKey, _} <- PriorityKeys ],
                 Map
             )
         ),
+    % Truncate the keys to print if there are too many. The `truncate' option
+    % may be an integer representing the maximum number of keys that should be
+    % printed, or the atom `infinite' to print all keys.
+    {TruncatedKeys, FooterKeys} =
+        case max_keys(Opts) of
+            Max when length(UnsortedGeneralKVs) > Max ->
+                {
+                    lists:sublist(UnsortedGeneralKVs, Max),
+                    [
+                        {
+                            <<"...">>,
+                            hb_util:bin(
+                                io_lib:format(
+                                    "[+ ~p additional keys]",
+                                    [length(UnsortedGeneralKVs) - Max]
+                                )
+                            )
+                        }
+                    |
+                        PrivKeys
+                    ]
+                };
+            _ -> {UnsortedGeneralKVs, PrivKeys}
+        end,
     KeyVals =
         FilterUndef(PriorityKeys) ++
         lists:sort(
             fun({K1, _}, {K2, _}) -> K1 < K2 end,
-            UnsortedGeneralKeyVals
+            TruncatedKeys
         ) ++
         FooterKeys,
     % Format the remaining 'normal' keys and values.
@@ -842,4 +866,13 @@ is_human_binary(Bin) when is_binary(Bin) ->
     case unicode:characters_to_binary(Bin) of
         {error, _, _} -> false;
         _ -> true
+    end.
+
+%% Determine the maximum number of keys to print for messages, given a node
+%% `Opts`.
+max_keys(Opts) ->
+    case hb_opts:get(debug_print_truncate, 50, Opts) of
+        Max when is_integer(Max) -> Max;
+        infinite -> infinite;
+        Term -> hb_util:int(Term)
     end.
