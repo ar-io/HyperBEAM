@@ -748,7 +748,7 @@ message(RawMap, Opts, Indent) when is_map(RawMap) ->
         ),
     % Truncate the keys to print if there are too many. The `truncate' option
     % may be an integer representing the maximum number of keys that should be
-    % printed, or the atom `infinite' to print all keys.
+    % printed, or the atom `infinity' to print all keys.
     {TruncatedKeys, FooterKeys} =
         case max_keys(Opts) of
             Max when length(UnsortedGeneralKVs) > Max ->
@@ -873,6 +873,6 @@ is_human_binary(Bin) when is_binary(Bin) ->
 max_keys(Opts) ->
     case hb_opts:get(debug_print_truncate, 50, Opts) of
         Max when is_integer(Max) -> Max;
-        infinite -> infinite;
+        infinity -> infinity;
         Term -> hb_util:int(Term)
     end.
