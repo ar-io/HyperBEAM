@@ -646,10 +646,12 @@ encode_reply(Status, TABMReq, Message, Opts) ->
                     case AcceptBundle of
                         true ->
                             #{
+                                <<"path">> => <<"to">>,
                                 <<"bundle">> => true
                             };
                         false ->
-                            #{
+                            TABMReq#{
+                                <<"path">> => <<"to">>,
                                 <<"index">> =>
                                     hb_opts:get(generate_index, true, Opts)
                             }
