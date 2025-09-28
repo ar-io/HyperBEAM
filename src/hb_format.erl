@@ -239,13 +239,27 @@ list(MsgList, Opts, Indent) ->
     case maybe_short(MsgList, Opts, Indent) of
         {ok, SimpleFmt} -> SimpleFmt;
         error ->
+            {ToPrint, Footer} =
+                case max_keys(Opts) of
+                    Max when length(MsgList) > Max ->
+                        {
+                            lists:sublist(MsgList, Max),
+                            hb_util:bin(
+                                io_lib:format(
+                                    "[+ ~p additional list elements]",
+                                    [length(MsgList) - Max]
+                                )
+                            )
+                        };
+                    _ -> {MsgList, <<>>}
+                end,
             "\n" ++
                 indent("List [~w] {", [length(MsgList)], Opts, Indent) ++
-                list_lines(MsgList, Opts, Indent)
+                list_lines(ToPrint, Footer, Opts, Indent)
     end.
 
 %% @doc Format a list as a multi-line string.
-list_lines(MsgList, Opts, Indent) ->
+list_lines(MsgList, Footer, Opts, Indent) ->
     Numbered = hb_util:number(MsgList),
     Lines =
         lists:map(
@@ -259,6 +273,10 @@ list_lines(MsgList, Opts, Indent) ->
             fun({Mode, _}) -> Mode == multiline end,
             Lines
         ),
+    IndentedFooterList =
+        if Footer == <<>> -> "";
+        true -> hb_util:list(indent(Footer, Indent + 1)) ++ "\n"
+        end,
     case AnyLong of
         false ->
             "\n" ++
@@ -271,8 +289,8 @@ list_lines(MsgList, Opts, Indent) ->
                             Lines
                         )
                     )
-                ) ++
-                "\n" ++
+                ) ++ "\n" ++
+                IndentedFooterList ++
                 indent("}", [], Opts, Indent);
         true ->
             "\n" ++
@@ -282,7 +300,9 @@ list_lines(MsgList, Opts, Indent) ->
                     Line
                 end,
                 Numbered
-            )) ++ indent("}", [], Opts, Indent)
+            )) ++
+            IndentedFooterList ++
+            indent("}", [], Opts, Indent)
     end.
 
 %% @doc Format a single element of a list.
@@ -364,7 +384,7 @@ indent(FmtStr, Terms, Opts, Ind) ->
         lists:flatten(
             io_lib:format(
                 [$\s || _ <- lists:seq(1, Ind * IndentSpaces)] ++
-                    lists:flatten(EscapedFmt) ++ "\n",
+                    lists:flatten(hb_util:list(EscapedFmt)) ++ "\n",
                 Terms
             )
         )
@@ -871,7 +891,7 @@ is_human_binary(Bin) when is_binary(Bin) ->
 %% Determine the maximum number of keys to print for messages, given a node
 %% `Opts`.
 max_keys(Opts) ->
-    case hb_opts:get(debug_print_truncate, 50, Opts) of
+    case hb_opts:get(debug_print_truncate, 5, Opts) of
         Max when is_integer(Max) -> Max;
         infinity -> infinity;
         Term -> hb_util:int(Term)
