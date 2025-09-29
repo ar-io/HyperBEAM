@@ -891,7 +891,7 @@ is_human_binary(Bin) when is_binary(Bin) ->
 %% Determine the maximum number of keys to print for messages, given a node
 %% `Opts`.
 max_keys(Opts) ->
-    case hb_opts:get(debug_print_truncate, 5, Opts) of
+    case hb_opts:get(debug_print_truncate, 20, Opts) of
         Max when is_integer(Max) -> Max;
         infinity -> infinity;
         Term -> hb_util:int(Term)

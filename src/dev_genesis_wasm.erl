@@ -474,6 +474,7 @@ log_server_events([Line | Rest]) ->
     log_server_events(Rest).
 
 %%% Tests
+-ifdef(ENABLE_GENESIS_WASM).
 
 import_legacy_checkpoint_test_() ->
     { timeout, 900, fun import_legacy_checkpoint/0 }.
@@ -507,7 +508,6 @@ import_legacy_checkpoint() ->
     ),
     {ok, _} = hb_ao:resolve(<<ProcID/binary, "~process@1.0/now">>, Opts).
 
--ifdef(ENABLE_GENESIS_WASM).
 test_base_process() ->
     test_base_process(#{}).
 test_base_process(Opts) ->
