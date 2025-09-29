@@ -158,24 +158,10 @@ move(Mode, Msg1, Msg2, Opts) ->
                     maps:fold(
                         fun(_, Patch, MsgN) ->
                             ?event({patching, {patch, Patch}, {before, MsgN}}),
-                            WithoutEmpty =
-                                hb_util:deep_set(
-                                    [<<"balances">>, <<"">>],
-                                    unset,
-                                    Patch,
-                                    Opts
-                                ),
-                            WithoutZero =
-                                hb_util:deep_set(
-                                    [<<"balances">>, <<"0">>],
-                                    unset,
-                                    WithoutEmpty,
-                                    Opts
-                                ),
                             Res =
                                 hb_ao:set(
                                     MsgN,
-                                    maps:without([<<"method">>], WithoutZero),
+                                    maps:without([<<"method">>], Patch),
                                     Opts
                                 ),
                             ?event({patched, {'after', Res}}),
@@ -370,9 +356,10 @@ req_prefix_test() ->
     ).
 
 custom_set_patch_test() ->
+    hb:init(),
     % Apply a patch from a message containing a device with a custom `set' key
     % (the `~trie@1.0' device in this example).
-    ID1 = hb_util:human_id(crypto:strong_rand_bytes(32)),
+    ID1 = hb_util:human_id(<<0:256>>),
     ID2 = hb_util:human_id(crypto:strong_rand_bytes(32)),
     State0 = #{
         <<"device">> => <<"patch@1.0">>,
@@ -387,7 +374,7 @@ custom_set_patch_test() ->
                 <<"2">> => #{
                     <<"method">> => <<"PATCH">>,
                     <<"balances">> => #{
-                        ID1 => <<"50">>,
+                        <<"A">> => <<"50">>,
                         ID2 => <<"250">>
                     }
                 }
@@ -396,18 +383,26 @@ custom_set_patch_test() ->
         <<"other-message">> => <<"other-value">>,
         <<"patch-from">> => <<"/results/outbox">>
     },
-    {ok, State1} =
-        hb_ao:resolve(
-            State0,
-            <<"compute">>,
-            #{}
-        ),
+    {ok, State1} = hb_ao:resolve(State0, <<"compute">>, #{}),
     ?event(debug_test, {resolved_state, State1}),
-    ?assertEqual(
-        <<"50">>,
-        hb_ao:get(<<"balances/", ID1/binary>>, State1, #{})
-    ),
-    ?assertEqual(
-        <<"250">>,
-        hb_ao:get(<<"balances/", ID2/binary>>, State1, #{})
-    ).
+    ?assertEqual(<<"50">>, hb_ao:get(<<"balances/A">>, State1, #{})),
+    ?assertEqual(<<"250">>, hb_ao:get(<<"balances/", ID2/binary>>, State1, #{})),
+    State2 =
+        State1#{
+            <<"results">> => #{
+                <<"outbox">> => #{
+                    <<"1">> => #{
+                        <<"method">> => <<"PATCH">>,
+                        <<"balances">> => #{
+                            ID1 => <<"1">>,
+                            ID2 => <<"500">>
+                        }
+                    }
+                }
+            }
+        },
+    {ok, State3} = hb_ao:resolve(State2, <<"compute">>, #{}),
+    ?event(debug_test, {resolved_state, State3}),
+    ?assertEqual(<<"1">>, hb_ao:get(<<"balances/", ID1/binary>>, State3, #{})),
+    ?assertEqual(<<"50">>, hb_ao:get(<<"balances/A">>, State3, #{})),
+    ?assertEqual(<<"500">>, hb_ao:get(<<"balances/", ID2/binary>>, State3, #{})).
