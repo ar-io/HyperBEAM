@@ -181,8 +181,10 @@ eflame_profile(Fun, Req, Opts) ->
             undefined ->
                 hb_escape:encode(hb_util:bin(io_lib:format("~p", [Fun])));
             Path ->
-                hb_escape:encode_quotes(
-                    hb_maps:get(Path, Req, Path, Opts)
+                hb_escape:encode_ampersand(
+                    hb_escape:encode_quotes(
+                        hb_maps:get(Path, Req, Path, Opts)
+                    )
                 )
         end,
     StackToFlameScript = hb_util:bin(filename:join(EflameDir, "flamegraph.pl")),
