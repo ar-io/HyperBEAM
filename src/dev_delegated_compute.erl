@@ -141,7 +141,6 @@ do_relay(Method, Path, Body, Headers, Opts) ->
             <<"relay-method">> => Method,
             <<"relay-body">> => Body,
             <<"relay-path">> => Path,
-            <<"relay-headers">> => Headers,
             <<"content-type">> => ContentType
         },
         Opts

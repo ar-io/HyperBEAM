@@ -44,13 +44,9 @@ call(M1, RawM2, Opts) ->
             Opts
         ),
     RelayHeaders = 
-        hb_ao:get_first(
-            [
-                {M1, <<"relay-headers">>},
-                {{as, <<"message@1.0">>, BaseTarget}, <<"relay-headers">>},
-                {RawM2, <<"relay-headers">>}
-            ],
-            not_found,
+        hb_maps:without(
+            [<<"relay-method">>, <<"relay-body">>, <<"relay-path">>],
+            RawM2,
             Opts
         ),
     RelayDevice =
