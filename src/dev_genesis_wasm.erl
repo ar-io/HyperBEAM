@@ -225,9 +225,33 @@ ensure_started(Opts) ->
                                             },
 											{"DISABLE_PROCESS_FILE_CHECKPOINT_CREATION", "false"},
 											{"PROCESS_MEMORY_FILE_CHECKPOINTS_DIR", CheckpointDir},
-                                            {"PROCESS_MEMORY_CACHE_MAX_SIZE", "12_000_000_000"},
-                                            {"PROCESS_WASM_SUPPORTED_EXTENSIONS", "WeaveDrive"},
-                                            {"PROCESS_WASM_MEMORY_MAX_LIMIT", "24_000_000_000"}
+                                            {"PROCESS_MEMORY_CACHE_MAX_SIZE",
+                                                hb_util:list(
+                                                    hb_opts:get(
+                                                        genesis_wasm_memory_cache_max_size,
+                                                        "12_000_000_000",
+                                                        Opts
+                                                    )
+                                                )
+                                            },
+                                            {"PROCESS_WASM_SUPPORTED_EXTENSIONS",
+                                                hb_util:list(
+                                                    hb_opts:get(
+                                                        genesis_wasm_supported_extensions,
+                                                        "WeaveDrive",
+                                                        Opts
+                                                    )
+                                                )
+                                            },
+                                            {"PROCESS_WASM_MEMORY_MAX_LIMIT",
+                                                hb_util:list(
+                                                    hb_opts:get(
+                                                        genesis_wasm_memory_max_limit,
+                                                        "24_000_000_000",
+                                                        Opts
+                                                    )
+                                                )
+                                            }
                                         ]
                                     }
                                 ]

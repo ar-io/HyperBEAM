@@ -362,7 +362,10 @@ default_message() ->
             [
                 <<"fcoN_xJeisVsPXA-trzVAuIiqO3ydLQxM-L4XbrQKzY">>,
                 <<"WjnS-s03HWsDSdMnyTdzB1eHZB2QheUWP_FVRVYxkXk">>
-            ]
+            ],
+        genesis_wasm_memory_cache_max_size => <<"12_000_000_000">>,
+        genesis_wasm_supported_extensions => <<"WeaveDrive">>,
+        genesis_wasm_memory_max_limit => <<"24_000_000_000">>
         % Should the node track and expose prometheus metrics?
         % We do not set this explicitly, so that the hb_features:test() value
         % can be used to determine if we should expose metrics instead,
