@@ -244,13 +244,13 @@ is_trie(Term, Opts) ->
 %% For example, given the following setup:
 %% ```
 %% Trie = #{ <<"a">> => Trie2, <<"b">> => Trie3 }
-%% Req = #{ <<"a1">> => 1, <<"a2">> => 2, <<"b1">> => 3, <<"b2">> => 4 }
+%% Req = #{ <<"a1w">> => 1, <<"a2x">> => 2, <<"b1y">> => 3, <<"b2z">> => 4 }
 %% ```
 %% The function should return:
 %% ```
 %% #{
-%%     <<"a">> => #{ <<"1">> => 1, <<"2">> => 2 },
-%%     <<"b">> => #{ <<"1">> => 3, <<"2">> => 4 }
+%%     <<"a">> => #{ <<"1w">> => 1, <<"2x">> => 2 },
+%%     <<"b">> => #{ <<"1y">> => 3, <<"2z">> => 4 }
 %% }
 %% ```
 group_keys(Trie, Req, Opts) ->
@@ -258,21 +258,17 @@ group_keys(Trie, Req, Opts) ->
         maps:groups_from_list(
             fun(ReqKey) ->
                 case longest_match(ReqKey, Trie, Opts) of
-                    no_match ->
-                        if ReqKey =/= <<>> -> binary:part(ReqKey, 0, 1);
-                        true -> <<"branch-value">>
-                        end;
+                    no_match -> binary:part(ReqKey, 0, 1);
                     BestMatch -> BestMatch
                 end
             end,
-            hb_maps:keys(Req, Opts) -- [<<"set-depth">>]
+            hb_maps:keys(Req, Opts) -- [<<>>, <<"set-depth">>]
         ),
     maps:map(
         fun(Subkey, SubKeys) ->
             maps:from_list(
                 lists:map(
                     fun(SubReqKey) ->
-                        ?event({subkey, Subkey, {subreqkey, SubReqKey}}),
                         {
                             case remove_prefix(Subkey, SubReqKey) of
                                 <<>> -> <<"branch-value">>;
@@ -292,11 +288,22 @@ group_keys(Trie, Req, Opts) ->
 %% from the beginning of a key.
 remove_prefix(no_match, Key) -> Key;
 remove_prefix(Prefix, Key) ->
-    binary:part(
-        Key,
-        byte_size(Prefix),
-        byte_size(Key) - byte_size(Prefix)
-    ).
+    try
+        binary:part(
+            Key,
+            byte_size(Prefix),
+            byte_size(Key) - byte_size(Prefix)
+        )
+    catch
+        error:badarg ->
+            ?event(error,
+                {could_not_remove_trie_prefix,
+                    {prefix, Prefix},
+                    {key, Key}
+                }
+            ),
+            throw({could_not_remove_prefix, Prefix, Key})
+    end.
 
 %% @doc Verify all commitments inside all layers of a trie. Used in the testing
 %% functions of this device.
