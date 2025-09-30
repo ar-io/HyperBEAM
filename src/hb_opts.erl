@@ -200,7 +200,7 @@ default_message() ->
         %% HTTP request options
         http_connect_timeout => 5000,
         http_keepalive => 120000,
-        http_request_send_timeout => 60000,
+        http_request_send_timeout => 300_000,
         port => 8734,
         wasm_allow_aot => false,
         %% Options for the relay device
