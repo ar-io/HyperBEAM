@@ -120,7 +120,6 @@ call(M1, RawM2, Opts) ->
             not_found -> TargetMod3;
             _ -> 
                 hb_maps:merge(
-                    TargetMod3,
                     hb_maps:without(
                         [<<"commitments">>],
                         hb_util:ok(
@@ -128,6 +127,7 @@ call(M1, RawM2, Opts) ->
                         ),
                         Opts
                     ),
+                    TargetMod3,
                     Opts
                 )
         end,
