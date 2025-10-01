@@ -366,13 +366,13 @@ custom_set_patch_test() ->
         <<"results">> => #{
             <<"outbox">> => #{
                 <<"1">> => #{
-                    <<"method">> => <<"PATCH">>,
+                    <<"device">> => <<"patch@1.0">>,
                     <<"balances">> => #{
                         <<"device">> => <<"trie@1.0">>
                     }
                 },
                 <<"2">> => #{
-                    <<"method">> => <<"PATCH">>,
+                    <<"device">> => <<"patch@1.0">>,
                     <<"balances">> => #{
                         <<"A">> => <<"50">>,
                         ID2 => <<"250">>
@@ -392,7 +392,7 @@ custom_set_patch_test() ->
             <<"results">> => #{
                 <<"outbox">> => #{
                     <<"1">> => #{
-                        <<"method">> => <<"PATCH">>,
+                        <<"device">> => <<"patch@1.0">>,
                         <<"balances">> => #{
                             ID1 => <<"1">>,
                             ID2 => <<"500">>
