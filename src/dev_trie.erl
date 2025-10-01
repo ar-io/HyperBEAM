@@ -419,15 +419,22 @@ large_balance_table_test() ->
                 _ <- lists:seq(1, TotalBalances)
             ]
         ),
-    ?event(debug_test, {created_balances, {keys, (Balances)}}),
+    ?event(debug_test, {created_balances, map_size(Balances)}),
     {ok, BaseTrie} =
         hb_ao:resolve(
             #{ <<"device">> => <<"trie@1.0">> },
             Balances#{ <<"path">> => <<"set">> },
             #{}
         ),
-    %?assert(verify_all(BaseTrie, #{})),
-    ?event(debug_test, {created_trie, (BaseTrie)}),
+    Base = #{ <<"balances">> => BaseTrie },
+    ?event(debug_test,
+        {initialized_trie_with_balances, {mem, erlang:external_size(Balances)}}
+    ),
+    {ok, WrittenID} = hb_cache:write(Base, #{}),
+    ?event(debug_test, {wrote_trie_to_cache, WrittenID}),
+    {ok, Read} = hb_cache:read(WrittenID, #{}),
+    ?event(debug_test, {read_trie_root, {mem, erlang:external_size(Read)}}),
+    ?event(debug_test, verified_complete_trie),
     UpdateBalanceA = 
         lists:nth(
             rand:uniform(TotalBalances), 
@@ -442,17 +449,35 @@ large_balance_table_test() ->
         hb_ao:set(
             BaseTrie,
             #{
-                UpdateBalanceA => <<"0">>,
-                UpdateBalanceB => <<"0">>
+                <<"balances">> =>
+                    #{
+                        UpdateBalanceA => <<"0">>,
+                        UpdateBalanceB => <<"0">>
+                    }
             },
             #{}
         ),
-    ?event(debug_test, {updated_trie, (UpdatedTrie)}),
-    ?event(debug_test, {checking_updates, {keys, [UpdateBalanceA, UpdateBalanceB]}}),
-    ?assertEqual(<<"0">>, hb_ao:get(UpdateBalanceA, UpdatedTrie, #{})),
-    ?event(debug_test, {checked_update, UpdateBalanceA}),
-    ?assertEqual(<<"0">>, hb_ao:get(UpdateBalanceB, UpdatedTrie, #{})),
-    ?event(debug_trie, {checked_update, UpdateBalanceB}).
+    ?event(debug_test, {updated_trie, map_size(UpdatedTrie)}),
+    ?assertEqual(
+        not_found,
+        hb_util:deep_get(
+            [<<"balances">>, UpdateBalanceA],
+            UpdatedTrie,
+            not_found,
+            #{}
+        )
+    ),
+    ?assertEqual(
+        <<"0">>,
+        hb_ao:get(<<"balances", UpdateBalanceA/binary>>, UpdatedTrie, #{})
+    ),
+    ?assertEqual(
+        <<"0">>,
+        hb_ao:get(<<"balances", UpdateBalanceB/binary>>, UpdatedTrie, #{})
+    ),
+    ?event(debug_trie,
+        {checked_updated_balances, [UpdateBalanceA, UpdateBalanceB]}
+    ).
 
 %% @doc Test robust updating of existing terminal values plus adding new ones
 update_existing_values_test() ->
