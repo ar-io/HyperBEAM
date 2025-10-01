@@ -199,7 +199,7 @@ eflame_profile(Fun, Req, Opts) ->
                 "cat ", (hb_util:bin(File))/binary,
                 " | uniq -c | awk '{print $2, \" \", $1}' | ",
                 StackToFlameScript/binary, " ", FlameArg/binary,
-                " --title=\"", Name/binary, "\""
+                " --title=\"", Name/binary, "\" 2>/dev/null"
             >>
         ),
     Flame = hb_util:bin(os:cmd(PreparedCommand)),
