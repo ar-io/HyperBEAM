@@ -25,7 +25,10 @@
 %%% @doc How many prefix layers should new keys be separated into by default?
 -define(DEFAULT_LAYERS, 2).
 
-info() -> #{ default => fun get/4 }.
+info() ->
+    #{
+        default => fun get/4
+    }.
 
 %% @doc Get the value of a key from the trie in a base message. The function
 %% calls recursively to find the value, matching the largest prefix of the key
@@ -35,23 +38,13 @@ get(Key, Trie, Req, Opts) ->
 get(Trie, Req, Opts) ->
     case hb_maps:find(<<"key">>, Req, Opts) of
         error -> {error, <<"`key' parameter is required for trie lookup.">>};
+        {ok, <<>>} -> {ok, Trie};
         {ok, Key} ->
             % If we have a key to search for, find the longest prefix match
             % amongst the keys in the trie and recurse, until there are no more
             % bytes of the key to match on.
             case longest_match(Key, Trie, Opts) of
-                no_match ->
-                    {error, not_found};
-                Key ->
-                    {ok, Val} = hb_maps:find(Key, Trie, Opts),
-                    case is_trie(Val, Opts) of
-                        false -> {ok, Val};
-                        true ->
-                            case hb_maps:find(<<"branch-value">>, Val, Opts) of
-                                {ok, Leaf} -> {ok, Leaf};
-                                error -> {ok, Val}
-                            end
-                    end;
+                <<>> -> {error, not_found};
                 Prefix ->
                     % Find the child node and the remaining key.
                     get(
@@ -66,14 +59,12 @@ get(Trie, Req, Opts) ->
 %% @doc Find the longest match for a key in a message representing a layer of 
 %% the trie.
 longest_match(Key, Trie, Opts) ->
-    longest_match(no_match, Key, hb_maps:keys(Trie, Opts) -- [<<"device">>], Opts).
+    longest_match(<<>>, Key, hb_maps:keys(Trie, Opts) -- [<<"device">>], Opts).
 longest_match(Best, _Key, [], _Opts) -> Best;
 longest_match(_Best, Key, [Key | _Keys], _Opts) -> Key;
 longest_match(Best, Key, [XKey | Keys], Opts) ->
     case binary:longest_common_prefix([XKey, Key]) of
-        NewLength when
-                (is_binary(Best) andalso NewLength > byte_size(Best)) orelse
-                (Best == no_match andalso NewLength > 0) ->
+        NewLength when NewLength > byte_size(Best) ->
             longest_match(binary:part(Key, 0, NewLength), Key, Keys, Opts);
         _ ->
             longest_match(Best, Key, Keys, Opts)
@@ -82,159 +73,68 @@ longest_match(Best, Key, [XKey | Keys], Opts) ->
 %% @doc Set keys and their values in the trie. The `set-depth' key determines
 %% how many layers of the trie the keys should be separated into.
 set(Base, Req, Opts) ->
-    {ok, do_set(Base, Req, Opts)}.
+    {ok, do_set(Base, filter_short(Req, Opts), Opts)}.
 do_set(Link, Req, Opts) when ?IS_LINK(Link) ->
     do_set(hb_cache:ensure_loaded(Link, Opts), Req, Opts);
-do_set(BaseTrie, Req, Opts) ->
-    % Insert the leaf node from the request, if it exists.
-    Trie = set_immediate(BaseTrie, Req, Opts),
-    % Remove the device keys from the request to yield the downstream request.
-    Insertable =
-        hb_maps:without(
-            [<<"branch-value">>, <<"set-depth">>, <<"path">>],
-            hb_private:reset(Req),
-            Opts
-        ),
-    ?event(debug_trie,
-        {set,
-            {base, BaseTrie},
-            {after_setting_immediate, Trie},
-            {inserting, Insertable}
-        }
-    ),
-    case hb_maps:get(<<"set-depth">>, Req, ?DEFAULT_LAYERS, Opts) of
-        0 ->
-            % We are inserting the remainder of the trie key in one go into the
-            % present level of the structure. 
-            merge(Trie, Insertable, Opts);
-        SetDepth ->
-            set_deeper_keys(Trie, Insertable, SetDepth, Opts)
-    end.
-
-%% @doc If there is an immediate value in the request, set it in the trie.
-set_immediate(MaybeTrie, Req, Opts) ->
-    case hb_maps:find(<<"branch-value">>, Req, Opts) of
-        {ok, Immediate} ->
-            case is_trie(MaybeTrie, Opts) of
-                true ->
-                    ?event(debug_trie,
-                        {setting_immediate,
-                            {trie, MaybeTrie},
-                            {immediate, Immediate}
+do_set(NonTrie, Req, Opts) when not is_map(NonTrie) ->
+    % We are attempting to set a value on a non-trie, so we wipe the entire
+    % base and replace it with a new trie.
+    do_set(#{}, Req, Opts);
+do_set(Trie, Req, Opts) ->
+    Insertable = hb_maps:without([<<"set-depth">>, <<"path">>], Req, Opts),
+    ?event(debug_trie, {set, {trie, Trie}, {inserting, Insertable}}),
+    Depth = hb_maps:get(<<"set-depth">>, Req, ?DEFAULT_LAYERS, Opts),
+    % If we are setting a terminal value (indicated by the presence of an empty
+    % string key or a depth of 0), we simply return it.
+    case {hb_maps:find(<<>>, Insertable, Opts), Depth} of
+        {{ok, Terminal}, _} -> Terminal;
+        {_, 0} -> hb_ao:set(Trie, Insertable, Opts);
+        {_, SetDepth} ->
+            % Split keys from the request into groups for each sub-branch of the
+            % trie that they should be inserted into. Each group is then inserted
+            % in a single recursive call.
+            % After all groups are inserted, the new trie has its commitments
+            % normalized and is returned.
+            NewTrie =
+                hb_maps:fold(
+                    fun(Subkey, SubReq, Acc) ->
+                        Acc#{
+                            Subkey =>
+                                do_set(
+                                    hb_maps:get(Subkey, Acc, #{}, Opts),
+                                    SubReq#{
+                                        <<"set-depth">> => SetDepth - 1
+                                    },
+                                    Opts
+                                )
                         }
-                    ),
-                    reset_unsigned_id(
-                        MaybeTrie#{ <<"branch-value">> => Immediate },
-                        Opts
-                    );
-                false ->
-                    ?event(debug_trie,
-                        {node_is_immediate_value,
-                            {non_trie, MaybeTrie},
-                            {immediate, Immediate}
-                        }
-                    ),
-                    Immediate
-            end;
-        error ->
-            MaybeTrie
+                    end,
+                    Trie,
+                    group_keys(Trie, Insertable, Opts),
+                    Opts
+                ),
+            Linkified =
+                hb_message:convert(
+                    NewTrie,
+                    <<"structured@1.0">>,
+                    <<"structured@1.0">>,
+                    Opts
+                ),
+            WithoutHMac =
+                hb_message:without_commitments(
+                    #{ <<"type">> => <<"unsigned">> },
+                    Linkified,
+                    Opts
+                ),
+            hb_message:commit(WithoutHMac, Opts, #{ <<"type">> => <<"unsigned">> })
     end.
 
-%% @doc Merge two nodes together in a trie. If the `base` is not a valid trie,
-%% we replace it with one -- nesting the existing value as the leaf node as
-%% needed.
-merge(new_trie, Req, Opts) ->
-    % There is no existing value, so we turn the request into our new trie node.
-    reset_unsigned_id(Req#{ <<"device">> => <<"trie@1.0">> }, Opts);
-merge(Term, Req, _Opts) when ?IS_EMPTY_MESSAGE(Req) ->
-    ?event({ignoring_merge_with_empty_message, {base, Term}, {req, Req}}),
-    Term;
-merge(Term, Req, Opts) ->
-    case is_trie(Term, Opts) of
-        false ->
-            % The existing value at the position in the trie is a terminal value.
-            % We set the existing value as the `branch-value`, with the remaining
-            % keys from the request being the non-leaf values.
-            ?event({merging_with_non_trie, {req, Req}, {existing, Term}}),
-            reset_unsigned_id(
-                Req#{
-                    <<"device">> => <<"trie@1.0">>,
-                    <<"branch-value">> => Term
-                },
-                Opts
-            );
-        true ->
-            ?event({merging_with_trie, Req}),
-            reset_unsigned_id(
-                (hb_maps:merge(Term, Req, Opts))#{ <<"device">> => <<"trie@1.0">> },
-                Opts
-            )
-    end.
-
-%% @doc Split keys from the request into groups for each sub-branch of the
-%% trie that they should be inserted into. Each group is then inserted
-%% in a single recursive call.
-%% After all groups are inserted, the new trie has its commitments
-%% normalized and is returned.
-set_deeper_keys(Existing, Empty, _Depth, _Opts) when ?IS_EMPTY_MESSAGE(Empty) ->
-    Existing;
-set_deeper_keys(MaybeTrie, Insertable, SetDepth, Opts) ->
-    Trie =
-        case hb_cache:ensure_loaded(MaybeTrie, Opts) of
-            new_trie -> #{ <<"device">> => <<"trie@1.0">> };
-            Existing when not is_map(Existing) ->
-                #{
-                    <<"device">> => <<"trie@1.0">>,
-                    <<"branch-value">> => Existing
-                };
-            T -> T
-        end,
-    reset_unsigned_id(
-        hb_maps:fold(
-            fun(Subkey, SubReq, Acc) ->
-                Acc#{
-                    Subkey =>
-                        do_set(
-                            hb_maps:get(Subkey, Acc, new_trie, Opts),
-                            SubReq#{ <<"set-depth">> => SetDepth - 1 },
-                            Opts
-                        )
-                }
-            end,
-            Trie,
-            group_keys(Trie, Insertable, Opts),
-            Opts
-        ),
-        Opts
+%% @doc Filter all keys that are shorter than the default prefix depth.
+filter_short(Req, _Opts) ->
+    maps:filter(
+        fun(Key, _Value) -> byte_size(Key) >= ?DEFAULT_LAYERS end,
+        Req
     ).
-
-%% @doc Reset the unsigned ID of a message.
-reset_unsigned_id(Trie, Opts) when is_map(Trie) ->
-    Linkified =
-        hb_message:convert(
-            Trie,
-            <<"structured@1.0">>,
-            <<"structured@1.0">>,
-            Opts
-        ),
-    WithoutHMac =
-        hb_message:without_commitments(
-            #{ <<"type">> => <<"unsigned">> },
-            Linkified,
-            Opts
-        ),
-    hb_message:commit(WithoutHMac, Opts, #{ <<"type">> => <<"unsigned">> });
-reset_unsigned_id(Trie, _Opts) -> Trie.
-
-%% @doc Determine if a given term is a valid `trie@1.0` message representing a
-%% node in the structure.
-is_trie(Term, Opts) ->
-    case hb_cache:ensure_loaded(Term, Opts) of
-        Msg when is_map(Msg) ->
-            hb_maps:get(<<"device">>, Msg, not_found, Opts) == <<"trie@1.0">>;
-        _ ->
-            false
-    end.
 
 %% @doc Take a request of keys and values, then return a new map of requests
 %% with keys split into sub-requests for each best-matching sub-trie of the base.
@@ -244,13 +144,13 @@ is_trie(Term, Opts) ->
 %% For example, given the following setup:
 %% ```
 %% Trie = #{ <<"a">> => Trie2, <<"b">> => Trie3 }
-%% Req = #{ <<"a1w">> => 1, <<"a2x">> => 2, <<"b1y">> => 3, <<"b2z">> => 4 }
+%% Req = #{ <<"a1">> => 1, <<"a2">> => 2, <<"b1">> => 3, <<"b2">> => 4 }
 %% ```
 %% The function should return:
 %% ```
 %% #{
-%%     <<"a">> => #{ <<"1w">> => 1, <<"2x">> => 2 },
-%%     <<"b">> => #{ <<"1y">> => 3, <<"2z">> => 4 }
+%%     <<"a">> => #{ <<"1">> => 1, <<"2">> => 2 },
+%%     <<"b">> => #{ <<"1">> => 3, <<"2">> => 4 }
 %% }
 %% ```
 group_keys(Trie, Req, Opts) ->
@@ -258,23 +158,20 @@ group_keys(Trie, Req, Opts) ->
         maps:groups_from_list(
             fun(ReqKey) ->
                 case longest_match(ReqKey, Trie, Opts) of
-                    no_match -> binary:part(ReqKey, 0, 1);
+                    <<>> -> binary:part(ReqKey, 0, 1);
                     BestMatch -> BestMatch
                 end
             end,
             hb_maps:keys(Req, Opts) -- [<<>>, <<"set-depth">>]
         ),
-    maps:map(
+    Res = maps:map(
         fun(Subkey, SubKeys) ->
             maps:from_list(
                 lists:map(
                     fun(SubReqKey) ->
                         {
-                            case remove_prefix(Subkey, SubReqKey) of
-                                <<>> -> <<"branch-value">>;
-                                RemainingKey -> RemainingKey
-                            end,
-                            hb_util:ok(hb_maps:find(SubReqKey, Req, Opts))
+                            remove_prefix(Subkey, SubReqKey),
+                            hb_maps:get(SubReqKey, Req, Opts)
                         }
                     end,
                     SubKeys
@@ -282,49 +179,16 @@ group_keys(Trie, Req, Opts) ->
             )
         end,
         SubReqs
-    ).
+    ),
+    ?event({grouped_keys, {explicit, Res}}),
+    Res.
 
-%% @doc Remove the matching component of a string (found with `longest_match')
-%% from the beginning of a key.
-remove_prefix(no_match, Key) -> Key;
 remove_prefix(Prefix, Key) ->
-    try
-        binary:part(
-            Key,
-            byte_size(Prefix),
-            byte_size(Key) - byte_size(Prefix)
-        )
-    catch
-        error:badarg ->
-            ?event(error,
-                {could_not_remove_trie_prefix,
-                    {prefix, Prefix},
-                    {key, Key}
-                }
-            ),
-            throw({could_not_remove_prefix, Prefix, Key})
-    end.
-
-%% @doc Verify all commitments inside all layers of a trie. Used in the testing
-%% functions of this device.
-verify_all(Base, Opts) ->
-    case hb_cache:ensure_loaded(Base, Opts) of
-        Loaded when is_map(Loaded) ->
-            hb_message:verify(Loaded, all, Opts) andalso
-                lists:all(
-                    fun(V) ->
-                        verify_all(hb_cache:ensure_loaded(V, Opts), Opts)
-                    end,
-                    hb_maps:values(
-                        hb_private:reset(
-                            hb_message:uncommitted(Loaded, Opts)
-                        ),
-                        Opts
-                    )
-                );
-        _ ->
-            true
-    end.
+    binary:part(
+        Key,
+        byte_size(Prefix),
+        byte_size(Key) - byte_size(Prefix)
+    ).
 
 %%% Tests
 
@@ -342,17 +206,14 @@ immediate_get_test() ->
     ).
 
 immediate_set_test() ->
-    Set =
-        hb_ao:set(
-            #{ <<"device">> => <<"trie@1.0">>, <<"a">> => 1},
-            #{ <<"b">> => 2 },
-            #{}
-        ),
-    ?assert(verify_all(Set, #{})),
     ?assert(
         hb_message:match(
             #{ <<"a">> => 1, <<"b">> => 2 },
-            Set,
+            hb_ao:set(
+                #{ <<"device">> => <<"trie@1.0">>, <<"a">> => 1},
+                #{ <<"b">> => 2 },
+                #{}
+            ),
             primary
         )
     ).
@@ -371,43 +232,37 @@ second_layer_get_test() ->
     ).
 
 second_layer_set_test() ->
-    Set =
-        hb_ao:set(
-            #{ <<"device">> => <<"trie@1.0">>, <<"a">> => #{ <<"b">> => 2 } },
-            #{ <<"ac">> => 3 },
-            #{}
-        ),
-    ?assert(verify_all(Set, #{})),
     ?assert(
         hb_message:match(
             #{ <<"a">> => #{ <<"b">> => 2, <<"c">> => 3 } },
-            Set,
+            hb_ao:set(
+                #{ <<"device">> => <<"trie@1.0">>, <<"a">> => #{ <<"b">> => 2 } },
+                #{ <<"ac">> => 3 },
+                #{}
+            ),
             primary
         )
     ).
 
 set_multiple_test() ->
-    Set =
-        hb_ao:set(
-            #{ <<"device">> => <<"trie@1.0">>, <<"a">> => #{ <<"b">> => 2 } },
-            #{ <<"ac">> => 3, <<"ad">> => 4, <<"ba">> => 5 },
-            #{}
-        ),
-    ?assert(verify_all(Set, #{})),
     ?assert(
         hb_message:match(
             #{
                 <<"a">> => #{ <<"b">> => 2, <<"c">> => 3, <<"d">> => 4 },
                 <<"b">> => #{ <<"a">> => 5 }
             },
-            Set,
+            hb_ao:set(
+                #{ <<"device">> => <<"trie@1.0">>, <<"a">> => #{ <<"b">> => 2 } },
+                #{ <<"ac">> => 3, <<"ad">> => 4, <<"ba">> => 5 },
+                #{}
+            ),
             primary
         )
     ).
 
 large_balance_table_test() ->
-    TotalBalances = 3_500,
-    ?event(debug_test, {large_balance_table_test, {total_balances, TotalBalances}}),
+    TotalBalances = 3_000,
+    ?event(debug_trie, {large_balance_table_test, {total_balances, TotalBalances}}),
     Balances =
         maps:from_list(
             [
@@ -419,28 +274,20 @@ large_balance_table_test() ->
                 _ <- lists:seq(1, TotalBalances)
             ]
         ),
-    ?event(debug_test, {created_balances, map_size(Balances)}),
+    ?event({created_balances, {keys, maps:size(Balances)}}),
     {ok, BaseTrie} =
         hb_ao:resolve(
             #{ <<"device">> => <<"trie@1.0">> },
             Balances#{ <<"path">> => <<"set">> },
             #{}
         ),
-    Base = #{ <<"balances">> => BaseTrie },
-    ?event(debug_test,
-        {initialized_trie_with_balances, {mem, erlang:external_size(Balances)}}
-    ),
-    {ok, WrittenID} = hb_cache:write(Base, #{}),
-    ?event(debug_test, {wrote_trie_to_cache, WrittenID}),
-    {ok, Read} = hb_cache:read(WrittenID, #{}),
-    ?event(debug_test, {read_trie_root, {mem, erlang:external_size(Read)}}),
-    ?event(debug_test, verified_complete_trie),
+    ?event(debug_trie, {created_trie, maps:size(BaseTrie)}),
     UpdateBalanceA = 
         lists:nth(
             rand:uniform(TotalBalances), 
             maps:keys(Balances)
         ),
-    UpdateBalanceB =
+    UpdateBalanceB = 
         lists:nth(
             rand:uniform(TotalBalances), 
             maps:keys(Balances)
@@ -449,35 +296,23 @@ large_balance_table_test() ->
         hb_ao:set(
             BaseTrie,
             #{
-                <<"balances">> =>
-                    #{
-                        UpdateBalanceA => <<"0">>,
-                        UpdateBalanceB => <<"0">>
-                    }
+                UpdateBalanceA => <<"0">>,
+                UpdateBalanceB => <<"0">>
             },
             #{}
         ),
-    ?event(debug_test, {updated_trie, map_size(UpdatedTrie)}),
-    ?assertEqual(
-        not_found,
-        hb_util:deep_get(
-            [<<"balances">>, UpdateBalanceA],
-            UpdatedTrie,
-            not_found,
-            #{}
-        )
-    ),
+    ?event(debug_trie, {updated_trie, maps:size(UpdatedTrie)}),
+    ?event(debug_trie, {checking_updates, {keys, [UpdateBalanceA, UpdateBalanceB]}}),
     ?assertEqual(
         <<"0">>,
-        hb_ao:get(<<"balances", UpdateBalanceA/binary>>, UpdatedTrie, #{})
+        hb_ao:get(UpdateBalanceA, UpdatedTrie, #{})
     ),
+    ?event(debug_trie, {checked_update, UpdateBalanceA}),
     ?assertEqual(
         <<"0">>,
-        hb_ao:get(<<"balances", UpdateBalanceB/binary>>, UpdatedTrie, #{})
+        hb_ao:get(UpdateBalanceB, UpdatedTrie, #{})
     ),
-    ?event(debug_trie,
-        {checked_updated_balances, [UpdateBalanceA, UpdateBalanceB]}
-    ).
+    ?event(debug_trie, {checked_update, UpdateBalanceB}).
 
 %% @doc Test robust updating of existing terminal values plus adding new ones
 update_existing_values_test() ->
@@ -499,7 +334,6 @@ update_existing_values_test() ->
             },
             #{}
         ),
-    ?assert(verify_all(UpdatedTrie, #{})),
     ?assertEqual(<<"150">>, hb_ao:get(<<"alice">>, UpdatedTrie, #{})),
     ?assertEqual(<<"250">>, hb_ao:get(<<"bob">>, UpdatedTrie, #{})),
     ?assertEqual(<<"400">>, hb_ao:get(<<"diana">>, UpdatedTrie, #{})),
@@ -530,6 +364,43 @@ update_existing_values_test() ->
     ?assertEqual(<<"400">>, hb_ao:get(<<"diana">>, FinalTrie, #{})),
     ?assertEqual(<<"500">>, hb_ao:get(<<"eve">>, FinalTrie, #{})).
 
+%% @doc Test commitment integrity after setting and re-setting keys
+commitment_integrity_test() ->
+    Wallet = hb:wallet(),
+    InitialMsg = hb_message:commit(#{
+        <<"device">> => <<"trie@1.0">>,
+        <<"key1">> => <<"value1">>,
+        <<"key2">> => <<"value2">>
+    }, Wallet),
+    % Verify initial commitments exist
+    InitialCommitted = hb_message:committed(InitialMsg, all, #{}),
+    ?assert(length(InitialCommitted) > 0),
+    % Update the trie with individual key updates
+    UpdatedMsg =
+        hb_ao:set(
+            InitialMsg,
+            #{
+                <<"key1">> => <<"updated-value1">>,
+                <<"key3">> => <<"new-value3">>
+            },
+            #{}
+        ),
+    % Verify commitments are maintained after update
+    UpdatedCommitted = hb_message:committed(UpdatedMsg, all, #{}),
+    ?assert(length(UpdatedCommitted) > 0),
+    ?assertEqual(
+        <<"updated-value1">>,
+        hb_ao:get(<<"key1">>, UpdatedMsg, #{})
+    ),
+    ?assertEqual(
+        <<"value2">>,
+        hb_ao:get(<<"key2">>, UpdatedMsg, #{})
+    ),
+    ?assertEqual(
+        <<"new-value3">>,
+        hb_ao:get(<<"key3">>, UpdatedMsg, #{})
+    ).
+
 %% @doc Test keys shorter than the default prefix depth
 short_keys_test() ->
     % Test single-byte keys (shorter than DEFAULT_LAYERS = 2)
@@ -549,10 +420,22 @@ short_keys_test() ->
             #{}
         ),
     % Verify all short keys can be retrieved
-    ?assertEqual(<<"value-a">>, hb_ao:get(<<"a">>, UpdatedTrie, #{})),
-    ?assertEqual(<<"value-b">>, hb_ao:get(<<"b">>, UpdatedTrie, #{})),
-    ?assertEqual(<<"value-0">>, hb_ao:get(<<"0">>, UpdatedTrie, #{})),
-    ?assertEqual(<<"value-1">>, hb_ao:get(<<"1">>, UpdatedTrie, #{})).
+    ?assertEqual(
+        <<"value-a">>,
+        hb_ao:get(<<"a">>, UpdatedTrie, #{})
+    ),
+    ?assertEqual(
+        <<"value-b">>,
+        hb_ao:get(<<"b">>, UpdatedTrie, #{})
+    ),
+    ?assertEqual(
+        <<"value-0">>,
+        hb_ao:get(<<"0">>, UpdatedTrie, #{})
+    ),
+    ?assertEqual(
+        <<"value-1">>,
+        hb_ao:get(<<"1">>, UpdatedTrie, #{})
+    ).
 
 %% @doc Test that mixed key lengths work with trie depth calculation
 mixed_key_lengths_test() ->
@@ -581,7 +464,6 @@ mixed_key_lengths_test() ->
             },
             #{}
         ),
-    ?assert(verify_all(Trie1, #{})),
     ?assertEqual(<<"updated-single">>, hb_ao:get(<<"x">>, Trie1, #{})),
     ?assertEqual(<<"overwritten-trie">>, hb_ao:get(<<"ab">>, Trie1, #{})).
 
@@ -601,7 +483,6 @@ custom_depth_test() ->
             },
             #{}
         ),
-    ?assert(verify_all(UpdatedTrie, #{})),
     ?assertEqual(
         <<"value1">>, 
         hb_ao:get(<<"very-long-key-1">>, UpdatedTrie, #{})
@@ -652,7 +533,6 @@ single_byte_key_test() ->
             },
             #{}
         ),
-    ?assert(verify_all(UpdatedTrie, #{})),
     ?assertEqual(<<"zero-balance">>, hb_ao:get(<<"0">>, UpdatedTrie, #{})),
     ?assertEqual(<<"one-balance">>, hb_ao:get(<<"1">>, UpdatedTrie, #{})),
     ?assertEqual(<<"normal-key">>, hb_ao:get(<<"abc">>, UpdatedTrie, #{})).
@@ -665,22 +545,23 @@ deep_nesting_test() ->
     Step1 =
         hb_ao:set(
             Trie,
-            #{ <<"l1">> => <<"immediate1">>, <<"l2">> => <<"immediate2">> },
+            #{ <<"level1">> => <<"value1">> },
             #{}
         ),
-    ?assert(verify_all(Step1, #{})),
-    ?event(debug_test, {step1, Step1}),
-    ?assertEqual(<<"immediate1">>, hb_ao:get(<<"l1">>, Step1, #{})),
-    ?assertEqual(<<"immediate2">>, hb_ao:get(<<"l2">>, Step1, #{})),
+    
     Step2 =
         hb_ao:set(
             Step1,
-            #{ <<"l1a">> => <<"value1a">>, <<"l2b">> => <<"value2b">> },
+            #{ <<"level2">> => <<"value2">> },
             #{}
         ),
-    ?assert(verify_all(Step2, #{})),
-    ?event(debug_test, {step2, Step2}),
-    ?assertEqual(<<"value1a">>, hb_ao:get(<<"l1a">>, Step2, #{})),
-    ?assertEqual(<<"value2b">>, hb_ao:get(<<"l2b">>, Step2, #{})),
-    ?assertEqual(<<"immediate1">>, hb_ao:get(<<"l1">>, Step2, #{})),
-    ?assertEqual(<<"immediate2">>, hb_ao:get(<<"l2">>, Step2, #{})).
+    ?assertEqual(<<"value1">>, hb_ao:get(<<"level1">>, Step2, #{})),
+    ?assertEqual(<<"value2">>, hb_ao:get(<<"level2">>, Step2, #{})),
+    Step3 =
+        hb_ao:set(
+            Trie,
+            #{ <<"level1a">> => <<"value1a">>, <<"level1b">> => <<"value1b">> },
+            #{}
+        ),
+    ?assertEqual(<<"value1a">>, hb_ao:get(<<"level1a">>, Step3, #{})),
+    ?assertEqual(<<"value1b">>, hb_ao:get(<<"level1b">>, Step3, #{})).
