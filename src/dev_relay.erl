@@ -43,12 +43,6 @@ call(M1, RawM2, Opts) ->
             ],
             Opts
         ),
-    RelayHeaders = 
-        hb_maps:without(
-            [<<"relay-method">>, <<"relay-body">>, <<"relay-path">>],
-            RawM2,
-            Opts
-        ),
     RelayDevice =
         hb_ao:get_first(
             [
@@ -116,21 +110,11 @@ call(M1, RawM2, Opts) ->
             _ -> TargetMod2#{<<"device">> => RelayDevice}
         end,
     TargetMod4 = 
-        case RelayHeaders of
-            not_found -> TargetMod3;
-            _ -> 
-                hb_maps:merge(
-                    hb_maps:without(
-                        [<<"commitments">>],
-                        hb_util:ok(
-                            hb_message:with_only_committed(RelayHeaders, Opts)
-                        ),
-                        Opts
-                    ),
-                    TargetMod3,
-                    Opts
-                )
-        end,
+        hb_maps:without(
+            [<<"commitments">>],
+            TargetMod3,
+            Opts
+        ),
     TargetMod5 =
         case Commit of
             true ->
