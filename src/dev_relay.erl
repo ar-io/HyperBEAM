@@ -43,16 +43,6 @@ call(M1, RawM2, Opts) ->
             ],
             Opts
         ),
-    RelayHeaders = 
-        hb_ao:get_first(
-            [
-                {M1, <<"relay-headers">>},
-                {{as, <<"message@1.0">>, BaseTarget}, <<"relay-headers">>},
-                {RawM2, <<"relay-headers">>}
-            ],
-            not_found,
-            Opts
-        ),
     RelayDevice =
         hb_ao:get_first(
             [
@@ -120,21 +110,11 @@ call(M1, RawM2, Opts) ->
             _ -> TargetMod2#{<<"device">> => RelayDevice}
         end,
     TargetMod4 = 
-        case RelayHeaders of
-            not_found -> TargetMod3;
-            _ -> 
-                hb_maps:merge(
-                    TargetMod3,
-                    hb_maps:without(
-                        [<<"commitments">>],
-                        hb_util:ok(
-                            hb_message:with_only_committed(RelayHeaders, Opts)
-                        ),
-                        Opts
-                    ),
-                    Opts
-                )
-        end,
+        hb_maps:without(
+            [<<"commitments">>],
+            TargetMod3,
+            Opts
+        ),
     TargetMod5 =
         case Commit of
             true ->

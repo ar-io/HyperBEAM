@@ -138,11 +138,14 @@ do_relay(Method, Path, Body, Headers, Opts) ->
         },
         Headers#{
             <<"path">> => <<"call">>,
-            <<"relay-method">> => Method,
-            <<"relay-body">> => Body,
-            <<"relay-path">> => Path,
-            <<"relay-headers">> => Headers,
-            <<"content-type">> => ContentType
+            <<"target">> => <<"payload">>,
+            <<"payload">> =>
+                Headers#{
+                    <<"path">> => Path,
+                    <<"method">> => Method,
+                    <<"body">> => Body,
+                    <<"content-type">> => ContentType
+                }
         },
         Opts
     ).
