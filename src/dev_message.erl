@@ -80,7 +80,7 @@ index(Msg, Req, Opts) ->
 %% (`httpsig@1.0') is used.
 %% 
 %% Note: This function _does not_ use AO-Core's `get/3' function, as it
-%% as it would require significant computation. We may want to change this
+%% would require significant computation. We may want to change this
 %% if/when non-map message structures are created.
 id(Base) -> id(Base, #{}).
 id(Base, Req) -> id(Base, Req, #{}).
@@ -89,7 +89,7 @@ id(Base, _, NodeOpts) when is_binary(Base) ->
     % format of the message ID return.
     {ok, hb_util:human_id(hb_path:hashpath(Base, NodeOpts))};
 id(RawBase, Req, NodeOpts) ->
-    % Ensure that the base message is a normalized before proceeding.
+    % Ensure that the base message is normalized before proceeding.
     IDOpts = NodeOpts#{ linkify_mode => discard },
     Base =
         ensure_commitments_loaded(
