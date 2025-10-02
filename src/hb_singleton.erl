@@ -180,7 +180,10 @@ from_path(RelativeRef) ->
     {
         ok,
         path_parts($/, Path),
-        maps:map(fun(_, Val) -> unquote(Val) end, hb_maps:from_list(QKVList))
+        maps:map(
+            fun(_, Val) -> hb_util:unquote(Val) end,
+            hb_maps:from_list(QKVList)
+        )
     }.
 
 %% @doc Step 2: Decode, split and sanitize the path. Split by `/' but avoid
