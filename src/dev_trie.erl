@@ -49,7 +49,7 @@ get(Trie, Req, Opts) ->
                     % Find the child node and the remaining key.
                     get(
                         remove_prefix(Prefix, Key),
-                        hb_maps:get(Prefix, Trie, Opts),
+                        hb_maps:get(Prefix, Trie, #{}, Opts),
                         #{},
                         Opts
                     )
