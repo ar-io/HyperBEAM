@@ -24,7 +24,7 @@ info(_Msg1, _Msg2, _Opts) ->
 
 %% @doc Exported function for scheduling a one-time message.
 once(_Msg1, Msg2, Opts) ->
-	case hb_ao:get(<<"cron-path">>, Msg2, Opts) of
+	case extract_path(<<"once">>, Msg2, Opts) of
 		not_found ->
 			{error, <<"No cron path found in message.">>};
 		CronPath ->
@@ -63,7 +63,7 @@ once_worker(Path, Req, Opts) ->
 %% @doc Exported function for scheduling a recurring message.
 every(_Msg1, Msg2, Opts) ->
 	case {
-		hb_ao:get(<<"cron-path">>, Msg2, Opts),
+		extract_path(<<"every">>, Msg2, Opts),
 		hb_ao:get(<<"interval">>, Msg2, Opts)
 	} of
 		{not_found, _} -> 
@@ -171,6 +171,11 @@ parse_time(BinString) ->
 		_ -> throw({invalid_time_unit, UnitStr})
 	end.
 
+%% @doc Extract the path from the request message, given the name of the key
+%% that was invoked.
+extract_path(Key, Req, Opts) ->
+    hb_ao:get_first([{Req, Key}, {Req, <<"cron-path">>}], Opts).
+
 %%% Tests
 
 stop_once_test() ->
@@ -266,8 +271,12 @@ once_executed_test() ->
 	% register the worker with the id
 	hb_name:register({<<"test">>, ID}, PID),
 	% Construct the URL path with the dynamic ID
-	UrlPath = <<"/~cron@1.0/once?test-id=", ID/binary,
-			"&cron-path=/~test-device@1.0/update_state">>,
+	UrlPath =
+        <<
+            "/~cron@1.0/once=\"/~test-device@1.0/update_state\"",
+            "?test-id=",
+            ID/binary
+        >>,
 	% this should call the worker via the test device
 	% the test device should look up the worker via the id given 
 	{ok, _ReqMsgId} = hb_http:get(Node, UrlPath, #{}),
