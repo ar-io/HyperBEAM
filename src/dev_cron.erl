@@ -7,7 +7,7 @@
 
 %% @doc Exported function for getting device info.
 info(_) -> 
-	#{ exports => [<<"info">>, <<"once">>, <<"every">>, <<"stop">>] }.
+	#{ default => fun handler/4 }.
 
 info(_Msg1, _Msg2, _Opts) ->
 	InfoBody = #{
@@ -21,6 +21,12 @@ info(_Msg1, _Msg2, _Opts) ->
 		}
 	},
 	{ok, #{<<"status">> => 200, <<"body">> => InfoBody}}.
+
+%% @doc Default handler: Assume that the key is an interval descriptor.
+handler(<<"set">>, Msg1, Msg2, Opts) -> dev_message:set(Msg1, Msg2, Opts);
+handler(<<"keys">>, Msg1, _Msg2, _Opts) -> dev_message:keys(Msg1);
+handler(Interval, Msg1, Msg2, Opts) ->
+    every(Msg1, Msg2#{ <<"interval">> => Interval }, Opts).
 
 %% @doc Exported function for scheduling a one-time message.
 once(_Msg1, Msg2, Opts) ->
@@ -61,10 +67,10 @@ once_worker(Path, Req, Opts) ->
 
 
 %% @doc Exported function for scheduling a recurring message.
-every(_Msg1, Msg2, Opts) ->
+every(_Base, Req, Opts) ->
 	case {
-		extract_path(<<"every">>, Msg2, Opts),
-		hb_ao:get(<<"interval">>, Msg2, Opts)
+		extract_path(Req, Opts),
+		hb_ao:get(<<"interval">>, Req, Opts)
 	} of
 		{not_found, _} -> 
 			{error, <<"No cron path found in message.">>};
@@ -78,11 +84,16 @@ every(_Msg1, Msg2, Opts) ->
 				true ->
 					ok
 				end,
-				ReqMsgID = hb_message:id(Msg2, all, Opts),
+				ReqMsgID = hb_message:id(Req, all, Opts),
 				ModifiedMsg2 =
-                    maps:remove(
-                        <<"cron-path">>,
-                        maps:remove(<<"interval">>, Msg2)
+                    hb_maps:without(
+                        [
+                            <<"interval">>,
+                            <<"cron-path">>,
+                            hb_maps:get(<<"every">>, Req, <<"every">>, Opts)
+                        ],
+                        Req,
+                        Opts
                     ),
 				TracePID = hb_tracer:start_trace(),
 				Pid =
@@ -173,6 +184,8 @@ parse_time(BinString) ->
 
 %% @doc Extract the path from the request message, given the name of the key
 %% that was invoked.
+extract_path(Req, Opts) ->
+    extract_path(hb_maps:get(<<"path">>, Req, Opts), Req, Opts).
 extract_path(Key, Req, Opts) ->
     hb_ao:get_first([{Req, Key}, {Req, <<"cron-path">>}], Opts).
 
@@ -301,9 +314,13 @@ every_worker_loop_test() ->
 	PID = spawn(fun test_worker/0),
 	ID = hb_util:human_id(crypto:strong_rand_bytes(32)),
 	hb_name:register({<<"test">>, ID}, PID),
-	UrlPath = <<"/~cron@1.0/every?test-id=", ID/binary, 
-		"&interval=500-milliseconds",
-		"&cron-path=/~test-device@1.0/increment_counter">>,
+	UrlPath =
+        <<
+            "/~cron@1.0/500-milliseconds", 
+		    "=\"/~test-device@1.0/increment_counter\"",
+            "?test-id=",
+            ID/binary
+        >>,
 	?event({cron_every_test_send_url, UrlPath}),
 	{ok, ReqMsgId} = hb_http:get(Node, UrlPath, #{}),
 	?event({cron_every_test_get_done, {req_id, ReqMsgId}}),
