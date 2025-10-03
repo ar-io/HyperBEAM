@@ -454,7 +454,7 @@ store_result(ForceSnapshot, ProcID, Slot, Msg3, Msg2, Opts) ->
                         {snapshot, WithLastSnapshot}
                     }
                 ),
-                hb_cache:ensure_all_loaded(WithLastSnapshot, Opts)
+                WithLastSnapshot
         end,
     ?event(compute, {caching_result, {proc_id, ProcID}, {slot, Slot}}, Opts),
     Writer = 
