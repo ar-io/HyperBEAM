@@ -12,6 +12,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -define(DEFAULT_FILTER_KEYS, [<<"content-length">>]).
+-define(MAX_RETRIES, 3).
 
 start() ->
     httpc:set_options([{max_keep_alive_length, 0}]),
@@ -104,7 +105,7 @@ request(Method, Peer, Path, RawMessage, Opts) ->
         ),
     StartTime = os:system_time(millisecond),
     % Perform the HTTP request.
-    {_ErlStatus, Status, Headers, Body} = hb_http_client:req(Req, Opts),
+    {ok, Status, Headers, Body} = request_and_retry(Req, Opts, 0),
     % Process the response.
     EndTime = os:system_time(millisecond),
     ?event(http_outbound,
@@ -213,6 +214,19 @@ request(Method, Peer, Path, RawMessage, Opts) ->
                 Body,
                 Opts
             )
+    end.
+
+request_and_retry(Req, Opts, Retry) ->
+    case hb_http_client:req(Req, Opts) of
+        {ok, Status, Headers, Body} ->
+            {ok, Status, Headers, Body};
+        {error, Reason} when Retry < ?MAX_RETRIES ->
+            ?event({request_error, Reason, request, Req}),
+            timer:sleep(timer:seconds(Retry + 1)),
+            request_and_retry(Req, Opts, Retry + 1);
+        {error, Reason} ->
+            ?event({request_error, Reason, request, Req}),
+            {error, Reason}
     end.
 
 %% @doc Convert a HTTP status code to a status atom.
