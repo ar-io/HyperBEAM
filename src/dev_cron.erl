@@ -44,7 +44,14 @@ once(_Msg1, Msg2, Opts) ->
 			Name = {<<"cron@1.0">>, ReqMsgID},
 			Pid = spawn(fun() -> once_worker(CronPath, ModifiedMsg2, Opts) end),
 			hb_name:register(Name, Pid),
-			{ok, ReqMsgID}
+			{
+                ok,
+                #{
+                    <<"status">> => 200,
+                    <<"cache-control">> => [<<"no-store">>],
+                    <<"body">> => ReqMsgID
+                }
+            }
 	end.
 
 %% @doc Internal function for scheduling a one-time message.
@@ -109,7 +116,14 @@ every(_Base, Req, Opts) ->
                     ),
 				Name = {<<"cron@1.0">>, ReqMsgID},
 				hb_name:register(Name, Pid),
-				{ok, ReqMsgID}
+				{
+                    ok,
+                    #{
+                        <<"status">> => 200,
+                        <<"cache-control">> => [<<"no-store">>],
+                        <<"body">> => ReqMsgID
+                    }
+                }
 			catch
 				_:{invalid_time_unit, Unit} ->
                     {error, <<"Invalid time unit: ", Unit/binary>>};
@@ -201,7 +215,7 @@ stop_once_test() ->
 	% Create a "once" task targeting the delay function
 	OnceUrlPath = <<"/~cron@1.0/once?test-id=", TestWorkerNameId/binary,
 				 "&cron-path=/~test-device@1.0/delay">>,
-	{ok, OnceTaskID} = hb_http:get(Node, OnceUrlPath, #{}),
+	{ok, #{ <<"body">> := OnceTaskID }} = hb_http:get(Node, OnceUrlPath, #{}),
 	?event({cron_stop_once_test_created, {task_id, OnceTaskID}}),
 	% Give a short delay to ensure the task has started and called handle,
     % entering the sleep
@@ -239,7 +253,7 @@ stop_every_test() ->
 	EveryUrlPath = <<"/~cron@1.0/every?test-id=", TestWorkerNameId/binary, 
 				   "&interval=500-milliseconds",
 				   "&cron-path=/~test-device@1.0/increment_counter">>,
-	{ok, CronTaskID} = hb_http:get(Node, EveryUrlPath, #{}),
+	{ok, #{ <<"body">> := CronTaskID }} = hb_http:get(Node, EveryUrlPath, #{}),
 	?event({cron_stop_every_test_created, CronTaskID}),
 	% Verify the cron worker process was registered and is alive
 	CronWorkerPid = hb_name:lookup({<<"cron@1.0">>, CronTaskID}),
@@ -292,7 +306,7 @@ once_executed_test() ->
         >>,
 	% this should call the worker via the test device
 	% the test device should look up the worker via the id given 
-	{ok, _ReqMsgId} = hb_http:get(Node, UrlPath, #{}),
+	{ok, #{ <<"body">> := _ReqMsgId }} = hb_http:get(Node, UrlPath, #{}),
 	% wait for the request to be processed
 	timer:sleep(1000),
 	% send a message to the worker to get the state
@@ -322,7 +336,7 @@ every_worker_loop_test() ->
             ID/binary
         >>,
 	?event({cron_every_test_send_url, UrlPath}),
-	{ok, ReqMsgId} = hb_http:get(Node, UrlPath, #{}),
+	{ok, #{ <<"body">> := ReqMsgId }} = hb_http:get(Node, UrlPath, #{}),
 	?event({cron_every_test_get_done, {req_id, ReqMsgId}}),
 	timer:sleep(1500),
 	PID ! {get, self()},
