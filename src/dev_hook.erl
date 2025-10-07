@@ -94,8 +94,15 @@ find(_Base, Req, Opts) ->
     HookName = maps:get(maps:get(<<"target">>, Req, <<"body">>), Req),
     case maps:get(HookName, hb_opts:get(on, #{}, Opts), []) of
         Handler when is_map(Handler) -> 
-            % If a single handler is found, wrap it in a list.
-            [Handler];
+            case hb_util:is_ordered_list(Handler, Opts) of
+                true ->
+                    % If the term is an ordered list message (containing only
+                    % numbered map keys sequentially), convert it to a list.
+                    hb_util:message_to_ordered_list(Handler, Opts);
+                false ->
+                    % If a single handler is found, wrap it in a list.
+                    [Handler]
+            end;
         Handlers when is_list(Handlers) -> 
             % If multiple handlers are found, return them as is
             Handlers;
