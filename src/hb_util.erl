@@ -340,10 +340,14 @@ list_to_numbered_message(List) ->
 is_ordered_list(Msg, _Opts) when is_list(Msg) -> true;
 is_ordered_list(Msg, Opts) ->
     is_ordered_list(1, hb_ao:normalize_keys(Msg, Opts), Opts).
-is_ordered_list(_, Msg, _Opts) when map_size(Msg) == 0 -> true;
 is_ordered_list(N, Msg, _Opts) ->
     case maps:get(NormKey = hb_ao:normalize_key(N), Msg, not_found) of
-        not_found -> false;
+        not_found ->
+            WithoutPriv = hb_private:reset(Msg),
+            case maps:without([<<"commitments">>, <<"ao-types">>], WithoutPriv) of
+                EmptyMsg when map_size(EmptyMsg) == 0 -> true;
+                _ -> false
+            end;
         _ ->
             is_ordered_list(
                 N + 1,
