@@ -164,12 +164,12 @@ execute_handler(HookName, Handler, Req, Opts) ->
         % committed before execution.
         BaseReq =
             Req#{
-                <<"path">> => hb_ao:get(<<"path">>, Handler, HookName, Opts),
-                <<"method">> => hb_ao:get(<<"method">>, Handler, <<"GET">>, Opts)
+                <<"path">> => hb_maps:get(<<"path">>, Handler, HookName, Opts),
+                <<"method">> => hb_maps:get(<<"method">>, Handler, <<"GET">>, Opts)
             },
         CommitReqBin = 
             hb_util:bin(
-                hb_ao:get(<<"hook/commit-request">>, Handler, <<"false">>, Opts)
+                hb_maps:get(<<"hook/commit-request">>, Handler, <<"false">>, Opts)
             ),
         {PreparedBase, PreparedReq} =
             case CommitReqBin of
@@ -204,7 +204,7 @@ execute_handler(HookName, Handler, Req, Opts) ->
                 {res, Res}
             }
         ),
-        case {Status, hb_ao:get(<<"hook/result">>, Handler, <<"return">>, Opts)} of
+        case {Status, hb_util:deep_get(<<"hook/result">>, Handler, <<"return">>, Opts)} of
             {ok, <<"ignore">>} -> {Status, Req};
             {ok, <<"return">>} -> {Status, Res};
             {ok, <<"error">>} -> {error, Res};
