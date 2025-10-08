@@ -113,8 +113,13 @@ edges(TrieNode) ->
 
 % Compute the longest common binary prefix of A and B, comparing chunks of N bits.
 bitwise_lcp(A, B, N) ->
-    % TODO: this placeholder implementation only works for N = 8! Implement the real thing!
-    binary:longest_common_prefix([A, B]) * 8.
+    bitwise_lcp(A, B, N, 0).
+bitwise_lcp(A, B, N, Acc) ->
+    case {A, B} of
+        {<<ChunkA:N, RestA/bits>>, <<ChunkB:N, RestB/bits>>} when ChunkA =:= ChunkB ->
+            bitwise_lcp(RestA, RestB, N, Acc + N);
+        _ -> Acc
+    end.
 
 % For a given key and list of edge labels, determine which edge label presents the longest prefix
 % match, comparing chunks of N bits. Returns a 2-tuple of {edge label, commonality in bits}.
