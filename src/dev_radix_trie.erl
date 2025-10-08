@@ -7,12 +7,17 @@
 %%% 2-bit comparison yields paths {00, 11, 01, 10}, which is why each node in a radix-4
 %%% trie can have at most 4 children!) A radix-256 trie is thus equivalent to bytewise comparison.
 -module(dev_radix_trie).
--export([set/3, get/4]).
+-export([info/0, set/3, get/3, get/4]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
 %%% @doc What default radix shall we use for the data structure?
 -define(RADIX, 256).
+
+info() ->
+    #{
+        default => fun get/4
+     }.
 
 %%% @doc Get the value associated with a key from a trie represented in a base message.
 get(Key, Trie, Req, Opts) ->
@@ -54,12 +59,12 @@ insert(TrieNode, Key, Val, KeyPrefixSizeAcc) ->
                             TrieNode#{<<"node-value">> => Val}
                     end;
                 {EdgeLabel, MatchSize} when MatchSize =:= bit_size(EdgeLabel) ->
-                    SubTrie = maps:get(EdgeLabel, TrieNode),
+                    SubTrie = hb_maps:get(EdgeLabel, TrieNode),
                     NewSubTrie = insert(SubTrie, Key, Val, bit_size(EdgeLabel) + KeyPrefixSizeAcc),
                     TrieNode#{EdgeLabel => NewSubTrie};
                 {EdgeLabel, MatchSize} ->
-                    SubTrie = maps:get(EdgeLabel, TrieNode),
-                    NewTrie = maps:remove(EdgeLabel, TrieNode),
+                    SubTrie = hb_maps:get(EdgeLabel, TrieNode),
+                    NewTrie = hb_maps:remove(EdgeLabel, TrieNode),
                     <<EdgeLabelPrefix:MatchSize/bitstring, EdgeLabelSuffix/bitstring>> = EdgeLabel,
                     <<_KeySuffixPrefix:MatchSize/bitstring, KeySuffixSuffix/bitstring>> = KeySuffix,
                     case bit_size(KeySuffixSuffix) > 0 of
@@ -86,7 +91,7 @@ retrieve(TrieNode, Key) ->
 retrieve(TrieNode, Key, KeyPrefixSizeAcc) ->
     case KeyPrefixSizeAcc >= bit_size(Key) of
         true ->
-            maps:get(<<"node-value">>, TrieNode, {error, not_found});
+            hb_maps:get(<<"node-value">>, TrieNode, {error, not_found});
         false ->
             case edges(TrieNode) of
                 [] ->
@@ -98,7 +103,7 @@ retrieve(TrieNode, Key, KeyPrefixSizeAcc) ->
                         {_EdgeLabel, MatchSize} when MatchSize =:= 0 ->
                             {error, not_found};
                         {EdgeLabel, MatchSize} when MatchSize =:= bit_size(EdgeLabel) ->
-                            SubTrie = maps:get(EdgeLabel, TrieNode),
+                            SubTrie = hb_maps:get(EdgeLabel, TrieNode),
                             retrieve(SubTrie, Key, bit_size(EdgeLabel) + KeyPrefixSizeAcc);
                         _ -> {error, not_found}
                     end
@@ -108,8 +113,8 @@ retrieve(TrieNode, Key, KeyPrefixSizeAcc) ->
 % Get a list of edge labels for a given trie node.
 % TODO: filter out system keys?
 edges(TrieNode) -> 
-  Filtered = maps:without([<<"node-value">>], TrieNode),
-  maps:keys(Filtered).
+  Filtered = hb_maps:without([<<"node-value">>], TrieNode),
+  hb_maps:keys(Filtered).
 
 % Compute the longest common binary prefix of A and B, comparing chunks of N bits.
 bitwise_lcp(A, B, N) ->
