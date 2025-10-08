@@ -33,10 +33,22 @@ get(TrieNode, Req, Opts) ->
 %% TODO: this might be optimizable by lexicographically sorting the Req ahead of time?
 set(Trie, Req, Opts) ->
     Insertable = hb_maps:without([<<"path">>], Req, Opts),
-    ?event(debug_radix_trie, {set, {trie, Trie}, {inserting, Insertable}}),
     KeyVals = hb_maps:to_list(Insertable, Opts),
     {ok, do_set(Trie, KeyVals, Opts)}.
-do_set(Trie, [], Opts) -> Trie;
+do_set(Trie, [], Opts) ->
+    Trie,
+    Linkified = hb_message:convert(
+        Trie,
+        <<"structured@1.0">>,
+        <<"structured@1.0">>,
+        Opts
+    ),
+    WithoutHMac = hb_message:without_commitments(
+        #{<<"type">> => <<"unsigned">>},
+        Linkified,
+        Opts
+    ),
+    hb_message:commit(WithoutHMac, Opts, #{<<"type">> => <<"unsigned">>});
 do_set(Trie, [{Key, Val} | KeyVals], Opts) ->
     NewTrie = insert(Trie, Key, Val),
     do_set(NewTrie, KeyVals, Opts).
@@ -45,44 +57,40 @@ insert(TrieNode, Key, Val) ->
     insert(TrieNode, Key, Val, 0).
 insert(TrieNode, Key, Val, KeyPrefixSizeAcc) ->
     <<_KeyPrefix:KeyPrefixSizeAcc/bitstring, KeySuffix/bitstring>> = Key,
-    case edges(TrieNode) of
-        [] ->
-            TrieNode#{KeySuffix => #{<<"node-value">> => Val}};
-        EdgeLabels ->
-            ChunkSize = round(math:log2(?RADIX)),
-            case longest_prefix_match(KeySuffix, EdgeLabels, ChunkSize) of
-                {EdgeLabel, MatchSize} when MatchSize =:= 0 ->
-                    case bit_size(KeySuffix) > 0 of
-                        true ->
-                            TrieNode#{KeySuffix => #{<<"node-value">> => Val}};
-                        false ->
-                            TrieNode#{<<"node-value">> => Val}
-                    end;
-                {EdgeLabel, MatchSize} when MatchSize =:= bit_size(EdgeLabel) ->
-                    SubTrie = hb_maps:get(EdgeLabel, TrieNode),
-                    NewSubTrie = insert(SubTrie, Key, Val, bit_size(EdgeLabel) + KeyPrefixSizeAcc),
-                    TrieNode#{EdgeLabel => NewSubTrie};
-                {EdgeLabel, MatchSize} ->
-                    SubTrie = hb_maps:get(EdgeLabel, TrieNode),
-                    NewTrie = hb_maps:remove(EdgeLabel, TrieNode),
-                    <<EdgeLabelPrefix:MatchSize/bitstring, EdgeLabelSuffix/bitstring>> = EdgeLabel,
-                    <<_KeySuffixPrefix:MatchSize/bitstring, KeySuffixSuffix/bitstring>> = KeySuffix,
-                    case bit_size(KeySuffixSuffix) > 0 of
-                        true ->
-                            NewTrie#{
-                                EdgeLabelPrefix => #{
-                                    EdgeLabelSuffix => SubTrie,
-                                    KeySuffixSuffix => #{<<"node-value">> => Val}
-                                }
-                            };
-                        false ->
-                            NewTrie#{
-                                EdgeLabelPrefix => #{
-                                    EdgeLabelSuffix => SubTrie,
-                                    <<"node-value">> => Val
-                                }
-                            }
-                    end
+    EdgeLabels = edges(TrieNode),
+    ChunkSize = round(math:log2(?RADIX)),
+    case longest_prefix_match(KeySuffix, EdgeLabels, ChunkSize) of
+        {EdgeLabel, MatchSize} when MatchSize =:= 0 ->
+            case bit_size(KeySuffix) > 0 of
+                true ->
+                    TrieNode#{KeySuffix => #{<<"node-value">> => Val}};
+                false ->
+                    TrieNode#{<<"node-value">> => Val}
+            end;
+        {EdgeLabel, MatchSize} when MatchSize =:= bit_size(EdgeLabel) ->
+            SubTrie = hb_maps:get(EdgeLabel, TrieNode),
+            NewSubTrie = insert(SubTrie, Key, Val, bit_size(EdgeLabel) + KeyPrefixSizeAcc),
+            TrieNode#{EdgeLabel => NewSubTrie};
+        {EdgeLabel, MatchSize} ->
+            SubTrie = hb_maps:get(EdgeLabel, TrieNode),
+            NewTrie = hb_maps:remove(EdgeLabel, TrieNode),
+            <<EdgeLabelPrefix:MatchSize/bitstring, EdgeLabelSuffix/bitstring>> = EdgeLabel,
+            <<_KeySuffixPrefix:MatchSize/bitstring, KeySuffixSuffix/bitstring>> = KeySuffix,
+            case bit_size(KeySuffixSuffix) > 0 of
+                true ->
+                    NewTrie#{
+                        EdgeLabelPrefix => #{
+                            EdgeLabelSuffix => SubTrie,
+                            KeySuffixSuffix => #{<<"node-value">> => Val}
+                        }
+                    };
+                false ->
+                    NewTrie#{
+                        EdgeLabelPrefix => #{
+                            EdgeLabelSuffix => SubTrie,
+                            <<"node-value">> => Val
+                        }
+                    }
             end
     end.
 
@@ -93,20 +101,16 @@ retrieve(TrieNode, Key, KeyPrefixSizeAcc) ->
         true ->
             hb_maps:get(<<"node-value">>, TrieNode, {error, not_found});
         false ->
-            case edges(TrieNode) of
-                [] ->
+            EdgeLabels = edges(TrieNode),
+            <<_KeyPrefix:KeyPrefixSizeAcc/bitstring, KeySuffix/bitstring>> = Key,
+            ChunkSize = round(math:log2(?RADIX)),
+            case longest_prefix_match(KeySuffix, EdgeLabels, ChunkSize) of
+                {_EdgeLabel, MatchSize} when MatchSize =:= 0 ->
                     {error, not_found};
-                EdgeLabels ->
-                    <<_KeyPrefix:KeyPrefixSizeAcc/bitstring, KeySuffix/bitstring>> = Key,
-                    ChunkSize = round(math:log2(?RADIX)),
-                    case longest_prefix_match(KeySuffix, EdgeLabels, ChunkSize) of
-                        {_EdgeLabel, MatchSize} when MatchSize =:= 0 ->
-                            {error, not_found};
-                        {EdgeLabel, MatchSize} when MatchSize =:= bit_size(EdgeLabel) ->
-                            SubTrie = hb_maps:get(EdgeLabel, TrieNode),
-                            retrieve(SubTrie, Key, bit_size(EdgeLabel) + KeyPrefixSizeAcc);
-                        _ -> {error, not_found}
-                    end
+                {EdgeLabel, MatchSize} when MatchSize =:= bit_size(EdgeLabel) ->
+                    SubTrie = hb_maps:get(EdgeLabel, TrieNode),
+                    retrieve(SubTrie, Key, bit_size(EdgeLabel) + KeyPrefixSizeAcc);
+                _ -> {error, not_found}
             end
     end.
 
