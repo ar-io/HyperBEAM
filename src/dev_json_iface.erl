@@ -107,19 +107,24 @@ message_to_json_struct(RawMsg, Features, Opts) ->
     MsgWithoutCommitments = hb_maps:without([<<"commitments">>], TABM, Opts),
     ID = hb_message:id(RawMsg, all),
     ?event({encoding, {id, ID}, {msg, RawMsg}}),
-	{Owner, Signature} =
+	{Owner, Signature, PublicKey} =
         case hb_message:signers(RawMsg, Opts) of
-            [] -> {<<>>, <<>>};
+            [] -> {<<>>, <<>>, <<>>};
             [Signer|_] ->
                 {ok, _, Commitment} =
                     hb_message:commitment(Signer, RawMsg, Opts),
                 CommitmentSignature =
                     hb_ao:get(<<"signature">>, Commitment, <<>>, Opts),
+                CommitmentKeyId =
+                    dev_codec_httpsig_keyid:remove_scheme_prefix(
+                        hb_ao:get(<<"keyid">>, Commitment, <<>>, Opts)
+                    ),
                 case lists:member(owner_as_address, Features) of
                     true -> 
                         {
                             hb_util:native_id(Signer),
-                            CommitmentSignature
+                            CommitmentSignature,
+                            CommitmentKeyId
                         };
                     false ->
                         CommitmentOwner =
@@ -131,7 +136,7 @@ message_to_json_struct(RawMsg, Features, Opts) ->
                                 no_signing_public_key_found_in_commitment,
                                 Opts
                             ),
-                        {CommitmentOwner, CommitmentSignature}
+                        {CommitmentOwner, CommitmentSignature, CommitmentKeyId}
                 end
         end,
     Last =
@@ -178,9 +183,9 @@ message_to_json_struct(RawMsg, Features, Opts) ->
                 0 -> <<>>;
                 512 -> hb_util:encode(Signature);
                 _ -> Signature
-            end
+            end,
+        <<"PublicKey">> => PublicKey
     }.
-
 %% @doc Prepare the tags of a message as a key-value list, for use in the 
 %% construction of the JSON-Struct message.
 prepare_tags(Msg, Opts) ->
