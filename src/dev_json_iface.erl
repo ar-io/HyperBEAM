@@ -146,13 +146,18 @@ message_to_json_struct(RawMsg, Features, Opts) ->
             <<>>,
             Opts
         ),
-    Data =
+    DataBytes =
         hb_ao:get(
             <<"data">>,
             {as, <<"message@1.0">>, MsgWithoutCommitments},
             <<>>,
             Opts
         ),
+    Data =
+        case hb_util:is_printable_string(DataBytes) of
+            true -> DataBytes;
+            false -> null 
+        end,
     Target =
         hb_ao:get(
             <<"target">>,

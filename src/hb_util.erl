@@ -5,6 +5,7 @@
 -export([id/1, id/2, native_id/1, human_id/1, human_int/1, to_hex/1]).
 -export([key_to_atom/1, key_to_atom/2, binary_to_strings/1]).
 -export([encode/1, decode/1, safe_encode/1, safe_decode/1]).
+-export([is_printable_string/1]).
 -export([find_value/2, find_value/3]).
 -export([deep_merge/3, deep_set/4, deep_get/3, deep_get/4]).
 -export([number/1, list_to_numbered_message/1]).
@@ -230,6 +231,13 @@ safe_decode(E) ->
         {ok, D}
     catch
         _:_ -> {error, invalid}
+    end.
+
+%% @doc Determine whether a binary contains only unicode printable characters.
+is_printable_string(Bin) when is_binary(Bin) ->
+    case unicode:characters_to_binary(Bin) of
+        {error, _, _} -> false;
+        _ -> true
     end.
 
 %% @doc Convert a binary to a hex string. Do not use this for anything other than
