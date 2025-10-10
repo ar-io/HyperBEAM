@@ -45,7 +45,7 @@ info(_) ->
     }.
 
 %% @doc HTTP info response providing information about this device
-info(_Msg1, _Msg2, _Opts) ->
+info(_Base, _Req, _Opts) ->
     InfoBody = #{
         <<"description">> => <<"Router device for handling outbound message routing">>,
         <<"version">> => <<"1.0">>,

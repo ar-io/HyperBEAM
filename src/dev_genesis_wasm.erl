@@ -11,7 +11,7 @@
 -define(STATUS_TIMEOUT, 100).
 
 %% @doc Initialize the device.
-init(Msg, _Msg2, _Opts) -> {ok, Msg}.
+init(Msg, _Req, _Opts) -> {ok, Msg}.
 
 %% @doc Normalize the device.
 normalize(Msg, Req, Opts) ->

@@ -671,7 +671,7 @@ resolve_stage(11, Base, Req, Res, ExecName, Opts) ->
     % unregister ourselves from the group.
     hb_persistent:unregister_notify(ExecName, Req, Res, Opts),
     resolve_stage(12, Base, Req, Res, ExecName, Opts);
-resolve_stage(12, _Msg1, _Msg2, {ok, Msg3} = Res, ExecName, Opts) ->
+resolve_stage(12, _Base, _Req, {ok, Msg3} = Res, ExecName, Opts) ->
     ?event(ao_core, {stage, 12, ExecName, maybe_spawn_worker}, Opts),
     % Check if we should fork out a new worker process for the current execution
     case {is_map(Msg3), hb_opts:get(spawn_worker, false, Opts#{ prefer => local })} of
@@ -683,7 +683,7 @@ resolve_stage(12, _Msg1, _Msg2, {ok, Msg3} = Res, ExecName, Opts) ->
             hb_persistent:forward_work(WorkerPID, Opts),
             Res
     end;
-resolve_stage(12, _Msg1, _Msg2, OtherRes, ExecName, Opts) ->
+resolve_stage(12, _Base, _Req, OtherRes, ExecName, Opts) ->
     ?event(ao_core, {stage, 12, ExecName, abnormal_status_skip_spawning}, Opts),
     OtherRes.
 
@@ -747,7 +747,7 @@ subresolve(RawBase, DevID, Req, Opts) ->
 %% function. This is a costly operation, so if it is not defined, we simply
 %% apply the function and return the result.
 -ifndef(AO_PROFILING).
-maybe_profiled_apply(Func, Args, _Msg1, _Msg2, _Opts) ->
+maybe_profiled_apply(Func, Args, _Base, _Req, _Opts) ->
     apply(Func, Args).
 -else.
 maybe_profiled_apply(Func, Args, Base, Req, Opts) ->

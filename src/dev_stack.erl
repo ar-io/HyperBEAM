@@ -117,15 +117,15 @@ info(Msg, Opts) ->
     ).
 
 %% @doc Return the default prefix for the stack.
-prefix(Base, _Msg2, Opts) ->
+prefix(Base, _Req, Opts) ->
     hb_ao:get(<<"output-prefix">>, {as, dev_message, Base}, <<"">>, Opts).
 
 %% @doc Return the input prefix for the stack.
-input_prefix(Base, _Msg2, Opts) ->
+input_prefix(Base, _Req, Opts) ->
     hb_ao:get(<<"input-prefix">>, {as, dev_message, Base}, <<"">>, Opts).
 
 %% @doc Return the output prefix for the stack.
-output_prefix(Base, _Msg2, Opts) ->
+output_prefix(Base, _Req, Opts) ->
     hb_ao:get(<<"output-prefix">>, {as, dev_message, Base}, <<"">>, Opts).
 
 %% @doc The device stack key router. Sends the request to `resolve_stack',

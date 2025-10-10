@@ -200,7 +200,7 @@ validate_next_slot(Base, [NextAssignment|Assignments], Lookahead, Last, Opts) ->
 
 %% @doc Get the assignments for a process from the message cache, local cache,
 %% or the inbox (thanks to a lookahead-worker).
-find_next_assignment(_Msg1, _Msg2, Schedule = [_Next|_], _LastSlot, _Opts) ->
+find_next_assignment(_Base, _Req, Schedule = [_Next|_], _LastSlot, _Opts) ->
     {ok, Schedule, undefined};
 find_next_assignment(Base, Req, _Schedule, LastSlot, Opts) ->
     ProcID = dev_process:process_id(Base, Req, Opts),
@@ -371,7 +371,7 @@ location(Base, Req, Opts) ->
 %% cache. If an address is provided, we search for the location of that
 %% specific scheduler. Otherwise, we return the location record for the current
 %% node's scheduler, if it has been established.
-get_location(_Msg1, Req, Opts) ->
+get_location(_Base, Req, Opts) ->
     % Get the address of the scheduler from the request.
     Address =
         hb_ao:get(
@@ -1539,7 +1539,7 @@ find_target_id(Base, Req, Opts) ->
 %% 2. A key in `Req' with another value, present in that message.
 %% 3. The body of the message.
 %% 4. The message itself.
-find_message_to_schedule(_Msg1, Req, Opts) ->
+find_message_to_schedule(_Base, Req, Opts) ->
     Subject =
         hb_ao:get(
             <<"subject">>,

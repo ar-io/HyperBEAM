@@ -103,9 +103,9 @@ do_monitor(Group, Last, Opts) ->
 find_or_register(Base, Req, Opts) ->
     GroupName = group(Base, Req, Opts),
     find_or_register(GroupName, Base, Req, Opts).
-find_or_register(ungrouped_exec, _Msg1, _Msg2, _Opts) ->
+find_or_register(ungrouped_exec, _Base, _Req, _Opts) ->
     {leader, ungrouped_exec};
-find_or_register(GroupName, _Msg1, _Msg2, Opts) ->
+find_or_register(GroupName, _Base, _Req, Opts) ->
     case hb_opts:get(await_inprogress, false, Opts) of
         false -> {leader, GroupName};
         _ ->
@@ -124,7 +124,7 @@ find_or_register(GroupName, _Msg1, _Msg2, Opts) ->
     end.
 
 %% @doc Unregister as the leader for an execution and notify waiting processes.
-unregister_notify(ungrouped_exec, _Msg2, _Msg3, _Opts) -> ok;
+unregister_notify(ungrouped_exec, _Req, _Msg3, _Opts) -> ok;
 unregister_notify(GroupName, Req, Msg3, Opts) ->
     unregister_groupname(GroupName, Opts),
     notify(GroupName, Req, Msg3, Opts).

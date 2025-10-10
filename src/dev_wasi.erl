@@ -218,7 +218,7 @@ parse_iovec(Instance, Ptr) ->
     {BinPtr, Len}.
 
 %%% Misc WASI-preview-1 handlers.
-clock_time_get(Base, _Msg2, Opts) ->
+clock_time_get(Base, _Req, Opts) ->
     ?event({clock_time_get, {returning, 1}}),
     State = hb_ao:get(<<"state">>, Base, Opts),
     {ok, #{ <<"state">> => State, <<"results">> => [1] }}.

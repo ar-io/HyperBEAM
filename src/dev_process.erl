@@ -70,7 +70,7 @@
 -endif.
 
 %% @doc When the info key is called, we should return the process exports.
-info(_Msg1) ->
+info(_Base) ->
     #{
         worker => fun dev_process_worker:server/3,
         grouper => fun dev_process_worker:group/3,
@@ -155,10 +155,10 @@ slot(Base, Req, Opts) ->
     ?event({slot_called, {msg1, Base}, {msg2, Req}}),
     run_as(<<"scheduler">>, Base, Req, Opts).
 
-next(Base, _Msg2, Opts) ->
+next(Base, _Req, Opts) ->
     run_as(<<"scheduler">>, Base, next, Opts).
 
-snapshot(RawMsg1, _Msg2, Opts) ->
+snapshot(RawMsg1, _Req, Opts) ->
     Base = ensure_process_key(RawMsg1, Opts),
     {ok, SnapshotMsg} = run_as(
         <<"execution">>,

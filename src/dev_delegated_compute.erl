@@ -9,13 +9,13 @@
 
 %% @doc Initialize or normalize the compute-lite device. For now, we don't
 %% need to do anything special here.
-init(Base, _Msg2, _Opts) ->
+init(Base, _Req, _Opts) ->
     {ok, Base}.
 
 %% @doc We assume that the compute engine stores its own internal state,
 %% with snapshots triggered only when HyperBEAM requests them. Subsequently,
 %% to load a snapshot, we just need to return the original message.
-normalize(Base, _Msg2, Opts) ->
+normalize(Base, _Req, Opts) ->
     case hb_maps:find(<<"snapshot">>, Base, Opts) of
         error -> {ok, Base};
         {ok, Snapshot} ->

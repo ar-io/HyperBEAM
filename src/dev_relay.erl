@@ -170,7 +170,7 @@ cast(M1, M2, Opts) ->
     {ok, <<"OK">>}.
 
 %% @doc Preprocess a request to check if it should be relayed to a different node.
-request(_Msg1, Req, Opts) ->
+request(_Base, Req, Opts) ->
     {ok,
         #{
             <<"body">> =>

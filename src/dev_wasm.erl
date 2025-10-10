@@ -43,7 +43,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% @doc Export all functions aside the `instance/3' function.
-info(_Msg1, _Opts) ->
+info(_Base, _Opts) ->
     #{
         excludes => [instance]
     }.

@@ -28,9 +28,9 @@
 -include_lib("include/hb.hrl").
 
 %% @doc Necessary hooks for compliance with the `execution-device' standard.
-init(Base, _Msg2, _Opts) -> {ok, Base}.
-normalize(Base, _Msg2, _Opts) -> {ok, Base}.
-snapshot(Base, _Msg2, _Opts) -> {ok, Base}.
+init(Base, _Req, _Opts) -> {ok, Base}.
+normalize(Base, _Req, _Opts) -> {ok, Base}.
+snapshot(Base, _Req, _Opts) -> {ok, Base}.
 compute(Base, Req, Opts) -> patches(Base, Req, Opts).
 
 %% @doc Get the value found at the `patch-from' key of the message, or the

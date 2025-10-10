@@ -28,7 +28,7 @@ info(_) ->
 
 %% @doc Exports a default_handler function that can be used to test the
 %% handler resolution mechanism.
-info(_Msg1, _Msg2, _Opts) ->
+info(_Base, _Req, _Opts) ->
 	InfoBody = #{
 		<<"description">> => <<"Test device for testing the AO-Core framework">>,
 		<<"version">> => <<"1.0">>,
@@ -84,13 +84,13 @@ compute(Base, Req, Opts) ->
     }.
 
 %% @doc Example `init/3' handler. Sets the `Already-Seen' key to an empty list.
-init(Msg, _Msg2, Opts) ->
+init(Msg, _Req, Opts) ->
     ?event({init_called_on_dev_test, Msg}),
     {ok, hb_ao:set(Msg, #{ <<"already-seen">> => [] }, Opts)}.
 
 %% @doc Example `restore/3' handler. Sets the hidden key `Test/Started' to the
 %% value of `Current-Slot' and checks whether the `Already-Seen' key is valid.
-restore(Msg, _Msg2, Opts) ->
+restore(Msg, _Req, Opts) ->
     ?event({restore_called_on_dev_test, Msg}),
     case hb_ao:get(<<"already-seen">>, Msg, Opts) of
         not_found ->
@@ -144,7 +144,7 @@ update_state(_Msg, Req, _Opts) ->
     end.
 
 %% @doc Find a test worker's PID and send it an increment message.
-increment_counter(_Msg1, Req, _Opts) ->
+increment_counter(_Base, Req, _Opts) ->
     case hb_ao:get(<<"test-id">>, Req) of
         not_found ->
             {error, <<"No test ID found in message.">>};

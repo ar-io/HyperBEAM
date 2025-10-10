@@ -9,7 +9,7 @@
 info(_) -> 
 	#{ default => fun handler/4 }.
 
-info(_Msg1, _Msg2, _Opts) ->
+info(_Base, _Req, _Opts) ->
 	InfoBody = #{
 		<<"description">> => <<"Cron device for scheduling messages">>,
 		<<"version">> => <<"1.0">>,
@@ -24,12 +24,12 @@ info(_Msg1, _Msg2, _Opts) ->
 
 %% @doc Default handler: Assume that the key is an interval descriptor.
 handler(<<"set">>, Base, Req, Opts) -> dev_message:set(Base, Req, Opts);
-handler(<<"keys">>, Base, _Msg2, _Opts) -> dev_message:keys(Base);
+handler(<<"keys">>, Base, _Req, _Opts) -> dev_message:keys(Base);
 handler(Interval, Base, Req, Opts) ->
     every(Base, Req#{ <<"interval">> => Interval }, Opts).
 
 %% @doc Exported function for scheduling a one-time message.
-once(_Msg1, Req, Opts) ->
+once(_Base, Req, Opts) ->
 	case extract_path(<<"once">>, Req, Opts) of
 		not_found ->
 			{error, <<"No cron path found in message.">>};
@@ -133,8 +133,8 @@ every(_Base, Req, Opts) ->
 	end.
 
 %% @doc Exported function for stopping a scheduled task.
-stop(_Msg1, Msg2, Opts) ->
-	case hb_ao:get(<<"task">>, Msg2, Opts) of
+stop(_Base, Req, Opts) ->
+	case hb_ao:get(<<"task">>, Req, Opts) of
 		not_found ->
 			{error, <<"No task ID found in message.">>};
 		TaskID ->

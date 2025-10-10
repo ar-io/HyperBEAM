@@ -176,7 +176,7 @@ call(WASM, FuncRef, Args, ImportFun, StateMsg, Opts)
     end.
 
 %% @doc Stub import function for the WASM executor.
-stub(Base, _Msg2, _Opts) ->
+stub(Base, _Req, _Opts) ->
     ?event(stub_stdlib_called),
     {ok, [0], Base}.
 
