@@ -1111,7 +1111,7 @@ aos_compute_test_() ->
         ?event({computed_data, Data}),
         ?assertEqual(<<"2">>, Data),
         Msg4 = #{ <<"path">> => <<"compute">>, <<"slot">> => 1 },
-        {ok, Res3} = hb_ao:resolve(Res2, Msg4, #{}),
+        {ok, Res3} = hb_ao:resolve(Base, Msg4, #{}),
         ?assertEqual(<<"4">>, hb_ao:get(<<"results/data">>, Res3, #{})),
         {ok, Res3}
     end}.
