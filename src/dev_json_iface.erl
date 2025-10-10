@@ -467,7 +467,7 @@ generate_stack(File, _Mode, RawOpts) ->
     test_init(),
     Msg0 = dev_wasm:cache_wasm_image(File, Opts),
     Image = hb_ao:get(<<"image">>, Msg0, Opts),
-    Msg1 = Msg0#{
+    Base = Msg0#{
         <<"device">> => <<"stack@1.0">>,
         <<"device-stack">> =>
             [
@@ -488,8 +488,8 @@ generate_stack(File, _Mode, RawOpts) ->
                 <<"authority">> => hb:address()
             }, Opts)
     },
-    {ok, Msg2} = hb_ao:resolve(Msg1, <<"init">>, Opts),
-    Msg2.
+    {ok, Req} = hb_ao:resolve(Base, <<"init">>, Opts),
+    Req.
 
 generate_aos_msg(ProcID, Code) ->
     generate_aos_msg(ProcID, Code, #{}).
@@ -511,14 +511,14 @@ basic_aos_call_test_() ->
 		Msg = generate_stack("test/aos-2-pure-xs.wasm"),
 		Proc = hb_ao:get(<<"process">>, Msg, #{ hashpath => ignore }),
 		ProcID = hb_message:id(Proc, all),
-		{ok, Msg3} =
+		{ok, Res} =
 			hb_ao:resolve(
 				Msg,
 				generate_aos_msg(ProcID, <<"return 1+1">>),
 				#{}
 			),
-		?event({res, Msg3}),
-		Data = hb_ao:get(<<"results/data">>, Msg3, #{}),
+		?event({res, Res}),
+		Data = hb_ao:get(<<"results/data">>, Res, #{}),
 		?assertEqual(<<"2">>, Data)
 	end}.
 
@@ -536,10 +536,10 @@ aos_stack_benchmark_test_() ->
                 Msg,
                 Opts
             ),
-        Msg2 = generate_aos_msg(ProcID, <<"return 1+1">>, Opts),
+        Req = generate_aos_msg(ProcID, <<"return 1+1">>, Opts),
         Iterations =
             hb_test_utils:benchmark(
-                fun() -> hb_ao:resolve(Initialized, Msg2, Opts) end,
+                fun() -> hb_ao:resolve(Initialized, Req, Opts) end,
                 BenchTime
             ),
         hb_test_utils:benchmark_print(

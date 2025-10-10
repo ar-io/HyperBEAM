@@ -9,7 +9,7 @@
 info(_) -> 
 	#{ default => fun handler/4 }.
 
-info(_Msg1, _Msg2, _Opts) ->
+info(_Base, _Req, _Opts) ->
 	InfoBody = #{
 		<<"description">> => <<"Cron device for scheduling messages">>,
 		<<"version">> => <<"1.0">>,
@@ -23,26 +23,26 @@ info(_Msg1, _Msg2, _Opts) ->
 	{ok, #{<<"status">> => 200, <<"body">> => InfoBody}}.
 
 %% @doc Default handler: Assume that the key is an interval descriptor.
-handler(<<"set">>, Msg1, Msg2, Opts) -> dev_message:set(Msg1, Msg2, Opts);
-handler(<<"keys">>, Msg1, _Msg2, _Opts) -> dev_message:keys(Msg1);
-handler(Interval, Msg1, Msg2, Opts) ->
-    every(Msg1, Msg2#{ <<"interval">> => Interval }, Opts).
+handler(<<"set">>, Base, Req, Opts) -> dev_message:set(Base, Req, Opts);
+handler(<<"keys">>, Base, _Req, _Opts) -> dev_message:keys(Base);
+handler(Interval, Base, Req, Opts) ->
+    every(Base, Req#{ <<"interval">> => Interval }, Opts).
 
 %% @doc Exported function for scheduling a one-time message.
-once(_Msg1, Msg2, Opts) ->
-	case extract_path(<<"once">>, Msg2, Opts) of
+once(_Base, Req, Opts) ->
+	case extract_path(<<"once">>, Req, Opts) of
 		not_found ->
 			{error, <<"No cron path found in message.">>};
 		CronPath ->
-			ReqMsgID = hb_message:id(Msg2, all, Opts),
+			ReqMsgID = hb_message:id(Req, all, Opts),
 			% make the path specific for the end device to be used
-			ModifiedMsg2 =
+			ModifiedReq =
                 maps:remove(
                     <<"cron-path">>,
-                    maps:put(<<"path">>, CronPath, Msg2)
+                    maps:put(<<"path">>, CronPath, Req)
                 ),
 			Name = {<<"cron@1.0">>, ReqMsgID},
-			Pid = spawn(fun() -> once_worker(CronPath, ModifiedMsg2, Opts) end),
+			Pid = spawn(fun() -> once_worker(CronPath, ModifiedReq, Opts) end),
 			hb_name:register(Name, Pid),
 			{
                 ok,
@@ -91,7 +91,7 @@ every(_Base, Req, Opts) ->
 					ok
 				end,
 				ReqMsgID = hb_message:id(Req, all, Opts),
-				ModifiedMsg2 =
+				ModifiedReq =
                     hb_maps:without(
                         [
                             <<"interval">>,
@@ -106,7 +106,7 @@ every(_Base, Req, Opts) ->
                         fun() ->
                             every_worker_loop(
                                 CronPath,
-                                ModifiedMsg2,
+                                ModifiedReq,
                                 Opts,
                                 IntervalMillis
                             )
@@ -133,8 +133,8 @@ every(_Base, Req, Opts) ->
 	end.
 
 %% @doc Exported function for stopping a scheduled task.
-stop(_Msg1, Msg2, Opts) ->
-	case hb_ao:get(<<"task">>, Msg2, Opts) of
+stop(_Base, Req, Opts) ->
+	case hb_ao:get(<<"task">>, Req, Opts) of
 		not_found ->
 			{error, <<"No task ID found in message.">>};
 		TaskID ->
