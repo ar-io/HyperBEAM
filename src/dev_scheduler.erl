@@ -692,7 +692,7 @@ do_post_schedule(ProcID, PID, Req, Opts) ->
                     {is_alive, is_process_alive(PID)}
                 }
             ),
-            % If Message2 is not a process, use the ID of Message1 as the PID
+            % If Request is not a process, use the ID of Base as the PID
             {ok, dev_scheduler_server:schedule(PID, Req)}
     end.
 

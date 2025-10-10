@@ -41,7 +41,7 @@
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
-%% @doc Extract the first key from a `Message2''s `Path' field.
+%% @doc Extract the first key from a `Request''s `Path' field.
 %% Note: This function uses the `dev_message:get/2' function, rather than 
 %% a generic call as the path should always be an explicit key in the message.
 hd(Req, Opts) ->
@@ -331,7 +331,7 @@ normalize(Path) ->
 %%% TESTS
 hashpath_test() ->
     Base = #{ priv => #{<<"empty">> => <<"message">>} },
-    Req = #{ priv => #{<<"exciting">> => <<"message2">>} },
+    Req = #{ priv => #{<<"exciting">> => <<"Request">>} },
     Hashpath = hashpath(Base, Req, #{}),
     ?assert(is_binary(Hashpath) andalso byte_size(Hashpath) == 87).
 
@@ -344,7 +344,7 @@ hashpath_direct_req_test() ->
 
 multiple_hashpaths_test() ->
     Base = #{ <<"empty">> => <<"message">> },
-    Req = #{ <<"exciting">> => <<"message2">> },
+    Req = #{ <<"exciting">> => <<"Request">> },
     Res = #{ priv => #{<<"hashpath">> => hashpath(Base, Req, #{}) } },
     Msg4 = #{ <<"exciting">> => <<"message4">> },
     Msg5 = hashpath(Res, Msg4, #{}),

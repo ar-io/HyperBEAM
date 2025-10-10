@@ -131,30 +131,30 @@ output_prefix(Base, _Req, Opts) ->
 %% @doc The device stack key router. Sends the request to `resolve_stack',
 %% except for `set/2' which is handled by the default implementation in
 %% `dev_message'.
-router(<<"keys">>, Message1, Message2, Opts) ->
-	?event({keys_called, {base, Message1}, {req, Message2}}),
-	dev_message:keys(Message1, Opts);
-router(Key, Message1, Message2, Opts) ->
+router(<<"keys">>, Base, Request, Opts) ->
+	?event({keys_called, {base, Base}, {req, Request}}),
+	dev_message:keys(Base, Opts);
+router(Key, Base, Request, Opts) ->
     case hb_path:matches(Key, <<"transform">>) of
-        true -> transformer_message(Message1, Opts);
-        false -> router(Message1, Message2, Opts)
+        true -> transformer_message(Base, Opts);
+        false -> router(Base, Request, Opts)
     end.
-router(Message1, Message2, Opts) ->
-	?event({router_called, {base, Message1}, {req, Message2}}),
+router(Base, Request, Opts) ->
+	?event({router_called, {base, Base}, {req, Request}}),
     Mode =
-        case hb_ao:get(<<"mode">>, Message2, not_found, Opts) of
+        case hb_ao:get(<<"mode">>, Request, not_found, Opts) of
             not_found ->
                 hb_ao:get(
                     <<"mode">>,
-                    {as, dev_message, Message1},
+                    {as, dev_message, Base},
                     <<"Fold">>,
                     Opts
                 );
             ReqMode -> ReqMode
         end,
     case Mode of
-        <<"Fold">> -> resolve_fold(Message1, Message2, Opts);
-        <<"Map">> -> resolve_map(Message1, Message2, Opts)
+        <<"Fold">> -> resolve_fold(Base, Request, Opts);
+        <<"Map">> -> resolve_map(Base, Request, Opts)
     end.
 
 %% @doc Return a message which, when given a key, will transform the message
@@ -188,7 +188,7 @@ transformer_message(Base, Opts) ->
 		}
 	}.
 
-%% @doc Return Message1, transformed such that the device named `Key' from the
+%% @doc Return Base, transformed such that the device named `Key' from the
 %% `Device-Stack' key in the message takes the place of the original `Device'
 %% key. This transformation allows dev_stack to correctly track the HashPath
 %% of the message as it delegates execution to devices contained within it.
@@ -261,12 +261,12 @@ transform(Base, Key, Opts) ->
 
 %% @doc The main device stack execution engine. See the moduledoc for more
 %% information.
-resolve_fold(Message1, Message2, Opts) ->
-	{ok, InitDevMsg} = dev_message:get(<<"device">>, Message1, Opts),
+resolve_fold(Base, Request, Opts) ->
+	{ok, InitDevMsg} = dev_message:get(<<"device">>, Base, Opts),
     StartingPassValue =
-        hb_ao:get(<<"pass">>, {as, dev_message, Message1}, unset, Opts),
-    PreparedMessage = hb_ao:set(Message1, <<"pass">>, 1, Opts),
-    case resolve_fold(PreparedMessage, Message2, 1, Opts) of
+        hb_ao:get(<<"pass">>, {as, dev_message, Base}, unset, Opts),
+    PreparedMessage = hb_ao:set(Base, <<"pass">>, 1, Opts),
+    case resolve_fold(PreparedMessage, Request, 1, Opts) of
         {ok, Raw} when not is_map(Raw) ->
             {ok, Raw};
         {ok, Result} ->
@@ -297,17 +297,17 @@ resolve_fold(Message1, Message2, Opts) ->
         Else ->
             Else
     end.
-resolve_fold(Message1, Message2, DevNum, Opts) ->
-	case transform(Message1, DevNum, Opts) of
-		{ok, Message3} ->
-			?event({stack_execute, DevNum, {base, Message3}, {req, Message2}}),
-			case hb_ao:resolve(Message3, Message2, Opts) of
+resolve_fold(Base, Request, DevNum, Opts) ->
+	case transform(Base, DevNum, Opts) of
+		{ok, Result} ->
+			?event({stack_execute, DevNum, {base, Result}, {req, Request}}),
+			case hb_ao:resolve(Result, Request, Opts) of
 				{ok, Message4} when is_map(Message4) ->
 					?event({result, ok, DevNum, Message4}),
-					resolve_fold(Message4, Message2, DevNum + 1, Opts);
+					resolve_fold(Message4, Request, DevNum + 1, Opts);
                 {error, not_found} ->
-                    ?event({skipping_device, not_found, DevNum, Message3}),
-                    resolve_fold(Message3, Message2, DevNum + 1, Opts);
+                    ?event({skipping_device, not_found, DevNum, Result}),
+                    resolve_fold(Result, Request, DevNum + 1, Opts);
                 {ok, RawResult} ->
                     ?event({returning_raw_result, RawResult}),
                     {ok, RawResult};
@@ -318,44 +318,44 @@ resolve_fold(Message1, Message2, DevNum, Opts) ->
                     ?event({result, pass, {dev, DevNum}, Message4}),
                     resolve_fold(
                         increment_pass(Message4, Opts),
-                        Message2,
+                        Request,
                         1,
                         Opts
                     );
 				{error, Info} ->
 					?event({result, error, {dev, DevNum}, Info}),
-					maybe_error(Message1, Message2, DevNum, Info, Opts);
+					maybe_error(Base, Request, DevNum, Info, Opts);
 				Unexpected ->
 					?event({result, unexpected, {dev, DevNum}, Unexpected}),
 					maybe_error(
-						Message1,
-						Message2,
+						Base,
+						Request,
 						DevNum,
 						{unexpected_result, Unexpected},
 						Opts
 					)
 			end;
 		not_found ->
-			?event({execution_complete, DevNum, Message1}),
-			{ok, Message1}
+			?event({execution_complete, DevNum, Base}),
+			{ok, Base}
 	end.
 
 %% @doc Map over the devices in the stack, accumulating the output in a single
 %% message of keys and values, where keys are the same as the keys in the
 %% original message (typically a number).
-resolve_map(Message1, Message2, Opts) ->
-    ?event({resolving_map, {base, Message1}, {req, Message2}}),
+resolve_map(Base, Request, Opts) ->
+    ?event({resolving_map, {base, Base}, {req, Request}}),
     DevKeys =
         hb_ao:get(
             <<"device-stack">>,
-            {as, dev_message, Message1},
+            {as, dev_message, Base},
             Opts
         ),
     Res = {ok,
         hb_maps:filtermap(
             fun(Key, _Dev) ->
-                {ok, OrigWithDev} = transform(Message1, Key, Opts),
-                case hb_ao:resolve(OrigWithDev, Message2, Opts) of
+                {ok, OrigWithDev} = transform(Base, Key, Opts),
+                case hb_ao:resolve(OrigWithDev, Request, Opts) of
                     {ok, Value} -> {true, Value};
                     _ -> false
                 end
@@ -374,17 +374,17 @@ increment_pass(Message, Opts) ->
         Opts
     ).
 
-maybe_error(Message1, Message2, DevNum, Info, Opts) ->
+maybe_error(Base, Request, DevNum, Info, Opts) ->
     case hb_opts:get(error_strategy, throw, Opts) of
         stop ->
-			{error, {stack_call_failed, Message1, Message2, DevNum, Info}};
+			{error, {stack_call_failed, Base, Request, DevNum, Info}};
         throw ->
 			erlang:raise(
                 error,
                 {device_failed,
                     {dev_num, DevNum},
-                    {base, Message1},
-                    {req, Message2},
+                    {base, Base},
+                    {req, Request},
                     {info, Info}
                 },
                 []

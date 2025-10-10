@@ -48,7 +48,7 @@
 %%%
 %%%     DevMod:info : Optional. Returns a map of options for the device. All 
 %%%                   options are optional and assumed to be the defaults if 
-%%%                   not specified. This function can accept a `Message1' as 
+%%%                   not specified. This function can accept a `Base' as 
 %%%                   an argument, allowing it to specify its functionality 
 %%%                   based on a specific message if appropriate.
 %%% 

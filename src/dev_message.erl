@@ -588,8 +588,8 @@ commitment_ids_from_committers(CommitterAddrs, Commitments, Opts) ->
 
 %% @doc Deep merge keys in a message. Takes a map of key-value pairs and sets
 %% them in the message, overwriting any existing values.
-set(Message1, NewValuesMsg, Opts) ->
-    OriginalPriv = hb_private:from_message(Message1),
+set(Base, NewValuesMsg, Opts) ->
+    OriginalPriv = hb_private:from_message(Base),
 	% Filter keys that are in the default device (this one).
     {ok, NewValuesKeys} = keys(NewValuesMsg, Opts),
 	KeysToSet =
@@ -605,7 +605,7 @@ set(Message1, NewValuesMsg, Opts) ->
 	ConflictingKeys =
 		lists:filter(
 			fun(Key) -> lists:member(Key, KeysToSet) end,
-			hb_maps:keys(Message1, Opts)
+			hb_maps:keys(Base, Opts)
 		),
     UnsetKeys =
         lists:filter(
@@ -615,16 +615,16 @@ set(Message1, NewValuesMsg, Opts) ->
                     _ -> false
                 end
             end,
-            hb_maps:keys(Message1, Opts)
+            hb_maps:keys(Base, Opts)
         ),
     % Base message with keys-to-unset removed
-    BaseValues = hb_maps:without(UnsetKeys, Message1, Opts),
+    BaseValues = hb_maps:without(UnsetKeys, Base, Opts),
     ?event(message_set,
         {performing_set,
             {conflicting_keys, ConflictingKeys},
             {keys_to_unset, UnsetKeys},
             {new_values, NewValuesMsg},
-            {original_message, Message1}
+            {original_message, Base}
         }
     ),
     % Create the map of new values
@@ -643,7 +643,7 @@ set(Message1, NewValuesMsg, Opts) ->
     % Caclulate if the keys to be set conflict with any committed keys.
     {ok, CommittedKeys} =
         committed(
-            Message1,
+            Base,
             #{
                 <<"committers">> => <<"all">>
             },
@@ -653,7 +653,7 @@ set(Message1, NewValuesMsg, Opts) ->
         {setting,
             {committed_keys, CommittedKeys},
             {keys_to_set, KeysToSet},
-            {message, Message1}
+            {message, Base}
         }
     ),
     OverwrittenCommittedKeys =
@@ -686,7 +686,7 @@ set(Message1, NewValuesMsg, Opts) ->
         _ ->
             % We did overwrite some keys, but do their values match the original?
             % If not, we must remove the commitments.
-            case hb_message:match(Merged, Message1, Opts) of
+            case hb_message:match(Merged, Base, Opts) of
                 true ->
                     ?event(message_set, {set_keys_matched, {merged, Merged}}),
                     {ok, Merged};
@@ -775,13 +775,13 @@ set_path(Base, Value, Opts) when not is_map(Value) ->
     end.
 
 %% @doc Remove a key or keys from a message.
-remove(Message1, Key) ->
-	remove(Message1, Key, #{}).
+remove(Base, Key) ->
+	remove(Base, Key, #{}).
 
-remove(Message1, #{ <<"item">> := Key }, Opts) ->
-    remove(Message1, #{ <<"items">> => [Key] }, Opts);
-remove(Message1, #{ <<"items">> := Keys }, Opts) ->
-    { ok, hb_maps:without(Keys, Message1, Opts) }.
+remove(Base, #{ <<"item">> := Key }, Opts) ->
+    remove(Base, #{ <<"items">> => [Key] }, Opts);
+remove(Base, #{ <<"items">> := Keys }, Opts) ->
+    { ok, hb_maps:without(Keys, Base, Opts) }.
 
 %% @doc Get the public keys of a message.
 keys(Msg) ->
