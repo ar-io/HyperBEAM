@@ -190,7 +190,7 @@ monitor_call(WASM, ImportFun, StateMsg, Opts) ->
         {import, Module, Func, Args, Signature} ->
             ?event({import_called, Module, Func, Args, Signature}),
             try
-                {ok, Res, StateMsg2} =
+                {ok, Res, StateReq} =
                     ImportFun(StateMsg,
                         #{
                             instance => WASM,
@@ -203,7 +203,7 @@ monitor_call(WASM, ImportFun, StateMsg, Opts) ->
                     ),
                 ?event({import_ret, Module, Func, {args, Args}, {res, Res}}),
                 dispatch_response(WASM, Res),
-                monitor_call(WASM, ImportFun, StateMsg2, Opts)
+                monitor_call(WASM, ImportFun, StateReq, Opts)
             catch
                 Err:Reason:Stack ->
                     % Signal the WASM executor to stop.

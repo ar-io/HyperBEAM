@@ -78,14 +78,14 @@ lookup(Base, Req, Opts) ->
                                     false -> {continue, Base, Req};
                                     true ->
                                         case hb_cache:read(Base, Opts) of
-                                            {ok, FullMsg1} ->
+                                            {ok, FullBase} ->
                                                 ?event(load_message,
                                                     {cache_hit_base_message_load,
                                                         {base_id, Base},
-                                                        {base_loaded, FullMsg1}
+                                                        {base_loaded, FullBase}
                                                     }
                                                 ),
-                                                {continue, FullMsg1, Req};
+                                                {continue, FullBase, Req};
                                             not_found ->
                                                 necessary_messages_not_found_error(
                                                     Base,

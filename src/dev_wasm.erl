@@ -324,17 +324,17 @@ import(Base, Req, Opts) ->
             FuncName/binary
         >>,
     StatePath = << Prefix/binary, "/stdlib/", ModName/binary, "/state" >>,
-    AdjustedMsg2 = Req#{ <<"path">> => AdjustedPath },
+    AdjustedReq = Req#{ <<"path">> => AdjustedPath },
     % 2. Add the current state to the message at the stdlib path.
-    AdjustedMsg1 =
+    AdjustedBase =
         hb_ao:set(
             Base,
             #{ StatePath => Base },
             Opts#{ hashpath => ignore }
         ),
-    ?event({state_added_msg1, AdjustedMsg1, AdjustedMsg2}),
+    ?event({state_added_msg1, AdjustedBase, AdjustedReq}),
     % 3. Resolve the adjusted path against the added state.
-    case hb_ao:resolve(AdjustedMsg1, AdjustedMsg2, Opts) of
+    case hb_ao:resolve(AdjustedBase, AdjustedReq, Opts) of
         {ok, Res} ->
             % 4. Success. Return.
             {ok, Res};
@@ -515,15 +515,15 @@ state_export_and_restore_test() ->
         ),
     ?event({after_setup, Req}),
     % Compute a computation and export the state.
-    {ok, Msg3a} = hb_ao:resolve(Req, <<"compute">>, #{}),
-    ?assertEqual([4], hb_ao:get(<<"results/output">>, Msg3a, #{})),
-    {ok, State} = hb_ao:resolve(Msg3a, <<"snapshot">>, #{}),
+    {ok, Resa} = hb_ao:resolve(Req, <<"compute">>, #{}),
+    ?assertEqual([4], hb_ao:get(<<"results/output">>, Resa, #{})),
+    {ok, State} = hb_ao:resolve(Resa, <<"snapshot">>, #{}),
     ?event({state_res, State}),
     % Restore the state without calling Init.
-    NewMsg1 = hb_maps:merge(Msg0, Extras#{ <<"snapshot">> => State }, #{}),
+    NewBase = hb_maps:merge(Msg0, Extras#{ <<"snapshot">> => State }, #{}),
     ?assertEqual(
         {ok, [4]},
-        hb_ao:resolve(NewMsg1, <<"compute/results/output">>, #{})
+        hb_ao:resolve(NewBase, <<"compute/results/output">>, #{})
     ).
 
 %%% Test helpers

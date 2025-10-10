@@ -90,8 +90,8 @@ info(_Base) ->
 
 %% @doc Return the process state with the device swapped out for the device
 %% of the given key.
-as(RawMsg1, Req, Opts) ->
-    {ok, Base} = ensure_loaded(RawMsg1, Req, Opts),
+as(RawBase, Req, Opts) ->
+    {ok, Base} = ensure_loaded(RawBase, Req, Opts),
     Key = 
         hb_ao:get_first(
             [
@@ -158,8 +158,8 @@ slot(Base, Req, Opts) ->
 next(Base, _Req, Opts) ->
     run_as(<<"scheduler">>, Base, next, Opts).
 
-snapshot(RawMsg1, _Req, Opts) ->
-    Base = ensure_process_key(RawMsg1, Opts),
+snapshot(RawBase, _Req, Opts) ->
+    Base = ensure_process_key(RawBase, Opts),
     {ok, SnapshotMsg} = run_as(
         <<"execution">>,
         Base,
@@ -419,7 +419,7 @@ compute_slot(ProcID, State, RawInputMsg, ReqMsg, Opts) ->
 %% key.
 store_result(ForceSnapshot, ProcID, Slot, Res, Req, Opts) ->
     % Cache the `Snapshot' key as frequently as the node is configured to.
-    Msg3MaybeWithSnapshot =
+    ResMaybeWithSnapshot =
         case ForceSnapshot orelse should_snapshot(Slot, Res, Opts) of
             false -> Res;
             true ->
@@ -459,7 +459,7 @@ store_result(ForceSnapshot, ProcID, Slot, Res, Req, Opts) ->
     ?event(compute, {caching_result, {proc_id, ProcID}, {slot, Slot}}, Opts),
     Writer = 
         fun() ->
-            dev_process_cache:write(ProcID, Slot, Msg3MaybeWithSnapshot, Opts)
+            dev_process_cache:write(ProcID, Slot, ResMaybeWithSnapshot, Opts)
         end,
     case hb_opts:get(process_async_cache, true, Opts) of
         true ->
@@ -469,7 +469,7 @@ store_result(ForceSnapshot, ProcID, Slot, Res, Req, Opts) ->
             Writer(),
             ?event(compute, {caching_completed, {proc_id, ProcID}, {slot, Slot}}, Opts)
     end,
-    hb_maps:without([<<"snapshot">>], Msg3MaybeWithSnapshot, Opts).
+    hb_maps:without([<<"snapshot">>], ResMaybeWithSnapshot, Opts).
 
 %% @doc Should we snapshot a new full state result? First, we check if the 
 %% `process_snapshot_time' option is set. If it is, we check if the elapsed time
@@ -523,8 +523,8 @@ should_snapshot_time(Res, Opts) ->
 
 %% @doc Returns the known state of the process at either the current slot, or
 %% the latest slot in the cache depending on the `process_now_from_cache' option.
-now(RawMsg1, Req, Opts) ->
-    Base = ensure_process_key(RawMsg1, Opts),
+now(RawBase, Req, Opts) ->
+    Base = ensure_process_key(RawBase, Opts),
     ProcessID = process_id(Base, #{}, Opts),
     case hb_opts:get(process_now_from_cache, false, Opts) of
         false ->
@@ -642,17 +642,17 @@ ensure_loaded(Base, Req, Opts) ->
                         Process,
                         Opts
                     ),
-                    LoadedSnapshotMsg2 =
+                    LoadedSnapshotReq =
                         LoadedSnapshotMsg#{
                             <<"process">> => UpdateProcess,
                             <<"initialized">> => <<"true">>
                         },
                     LoadedSlot = hb_cache:ensure_all_loaded(MaybeLoadedSlot, Opts),
-                    ?event(compute, {found_state_checkpoint, ProcID, LoadedSnapshotMsg2}),
+                    ?event(compute, {found_state_checkpoint, ProcID, LoadedSnapshotReq}),
                     {ok, Normalized} =
                         run_as(
                             <<"execution">>,
-                            LoadedSnapshotMsg2,
+                            LoadedSnapshotReq,
                             normalize,
                             Opts#{ hashpath => ignore }
                         ),
@@ -1043,9 +1043,9 @@ wasm_compute_from_id_test() ->
     Opts = #{ cache_control => <<"always">> },
     Base = test_wasm_process(<<"test/test-64.wasm">>),
     schedule_wasm_call(Base, <<"fac">>, [5.0], Opts),
-    Msg1ID = hb_message:id(Base, all),
+    BaseID = hb_message:id(Base, all),
     Req = #{ <<"path">> => <<"compute">>, <<"slot">> => 0 },
-    {ok, Res} = hb_ao:resolve(Msg1ID, Req, Opts),
+    {ok, Res} = hb_ao:resolve(BaseID, Req, Opts),
     ?event(process_compute, {computed_message, {res, Res}}),
     ?assertEqual([120.0], hb_ao:get(<<"results/output">>, Res, Opts)).
 
@@ -1198,14 +1198,14 @@ aos_state_patch_test_() ->
     {timeout, 30, fun() ->
         Wallet = hb:wallet(),
         init(),
-        Msg1Raw = test_aos_process(#{}, [
+        BaseRaw = test_aos_process(#{}, [
             <<"wasi@1.0">>,
             <<"json-iface@1.0">>,
             <<"wasm-64@1.0">>,
             <<"patch@1.0">>,
             <<"multipass@1.0">>
         ]),
-        {ok, Base} = hb_message:with_only_committed(Msg1Raw, #{}),
+        {ok, Base} = hb_message:with_only_committed(BaseRaw, #{}),
         ProcID = hb_message:id(Base, all),
         Req = (hb_message:commit(#{
             <<"data-protocol">> => <<"ao">>,
@@ -1303,20 +1303,20 @@ persistent_process_test() ->
         schedule_aos_call(Base, <<"return 2">>),
         schedule_aos_call(Base, <<"return X">>),
         T0 = hb:now(),
-        FirstSlotMsg2 = #{
+        FirstSlotReq = #{
             <<"path">> => <<"compute">>,
             <<"slot">> => 0
         },
         ?assertMatch(
             {ok, _},
-            hb_ao:resolve(Base, FirstSlotMsg2, #{ spawn_worker => true })
+            hb_ao:resolve(Base, FirstSlotReq, #{ spawn_worker => true })
         ),
         T1 = hb:now(),
-        ThirdSlotMsg2 = #{
+        ThirdSlotReq = #{
             <<"path">> => <<"compute">>,
             <<"slot">> => 2
         },
-        Res = hb_ao:resolve(Base, ThirdSlotMsg2, #{}),
+        Res = hb_ao:resolve(Base, ThirdSlotReq, #{}),
         ?event({computed_message, {res, Res}}),
         ?assertMatch(
             {ok, _},
@@ -1373,13 +1373,13 @@ aos_persistent_worker_benchmark_test_() ->
         init(),
         Base = test_aos_process(),
         schedule_aos_call(Base, <<"X=1337">>),
-        FirstSlotMsg2 = #{
+        FirstSlotReq = #{
             <<"path">> => <<"compute">>,
             <<"slot">> => 0
         },
         ?assertMatch(
             {ok, _},
-            hb_ao:resolve(Base, FirstSlotMsg2, #{ spawn_worker => true })
+            hb_ao:resolve(Base, FirstSlotReq, #{ spawn_worker => true })
         ),
         Iterations = hb_test_utils:benchmark(
             fun(Iteration) ->

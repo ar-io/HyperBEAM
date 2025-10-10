@@ -150,7 +150,7 @@ router(Message1, Message2, Opts) ->
                     <<"Fold">>,
                     Opts
                 );
-            Msg2Mode -> Msg2Mode
+            ReqMode -> ReqMode
         end,
     case Mode of
         <<"Fold">> -> resolve_fold(Message1, Message2, Opts);
@@ -592,9 +592,9 @@ no_prefix_test() ->
             <<"key">> => <<"example">>,
             <<"example">> => 1
         },
-    {ok, Ex1Msg3} = hb_ao:resolve(test_prefix_msg(), Req, #{}),
-    ?event({ex1, Ex1Msg3}),
-    ?assertMatch(1, hb_ao:get(<<"example">>, Ex1Msg3, #{})).
+    {ok, Ex1Res} = hb_ao:resolve(test_prefix_msg(), Req, #{}),
+    ?event({ex1, Ex1Res}),
+    ?assertMatch(1, hb_ao:get(<<"example">>, Ex1Res, #{})).
 
 output_prefix_test() ->
     Base =
@@ -607,11 +607,11 @@ output_prefix_test() ->
             <<"key">> => <<"example">>,
             <<"example">> => 1
         },
-    {ok, Ex2Msg3} = hb_ao:resolve(Base, Req, #{}),
+    {ok, Ex2Res} = hb_ao:resolve(Base, Req, #{}),
     ?assertMatch(1,
-        hb_ao:get(<<"out1/example">>, {as, dev_message, Ex2Msg3}, #{})),
+        hb_ao:get(<<"out1/example">>, {as, dev_message, Ex2Res}, #{})),
     ?assertMatch(1,
-        hb_ao:get(<<"out2/example">>, {as, dev_message, Ex2Msg3}, #{})).
+        hb_ao:get(<<"out2/example">>, {as, dev_message, Ex2Res}, #{})).
 
 input_and_output_prefixes_test() ->
     Base =
@@ -644,11 +644,11 @@ input_output_prefixes_passthrough_test() ->
             <<"key">> => <<"example">>,
             <<"combined-in">> => #{ <<"example">> => 1 }
         },
-    {ok, Ex2Msg3} = hb_ao:resolve(Base, Req, #{}),
+    {ok, Ex2Res} = hb_ao:resolve(Base, Req, #{}),
     ?assertMatch(1,
         hb_ao:get(
             <<"combined-out/example">>,
-            {as, dev_message, Ex2Msg3},
+            {as, dev_message, Ex2Res},
             #{}
         )
     ).

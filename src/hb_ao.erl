@@ -243,15 +243,15 @@ resolve_stage(1, {as, DevID, Raw = #{ <<"path">> := ID }}, Req, Opts) when ?IS_I
     % If the first message is an `as' with an ID, we should load the message and
     % apply the non-path elements of the sub-request to it.
     ?event(ao_core, {stage, 1, subresolving_with_load, {dev, DevID}, {id, ID}}, Opts),
-    RemMsg1 = hb_maps:without([<<"path">>], Raw, Opts),
-    ?event(subresolution, {loading_message, {id, ID}, {params, RemMsg1}}, Opts),
-    Msg1b = ensure_message_loaded(ID, Opts),
-    ?event(subresolution, {loaded_message, {msg, Msg1b}}, Opts),
-    Msg1c = hb_maps:merge(Msg1b, RemMsg1, Opts),
-    ?event(subresolution, {merged_message, {msg, Msg1c}}, Opts),
-    Msg1d = set(Msg1c, <<"device">>, DevID, Opts),
-    ?event(subresolution, {loaded_parameterized_message, {msg, Msg1d}}, Opts),
-    resolve_stage(1, Msg1d, Req, Opts);
+    RemBase = hb_maps:without([<<"path">>], Raw, Opts),
+    ?event(subresolution, {loading_message, {id, ID}, {params, RemBase}}, Opts),
+    Baseb = ensure_message_loaded(ID, Opts),
+    ?event(subresolution, {loaded_message, {msg, Baseb}}, Opts),
+    Basec = hb_maps:merge(Baseb, RemBase, Opts),
+    ?event(subresolution, {merged_message, {msg, Basec}}, Opts),
+    Based = set(Basec, <<"device">>, DevID, Opts),
+    ?event(subresolution, {loaded_parameterized_message, {msg, Based}}, Opts),
+    resolve_stage(1, Based, Req, Opts);
 resolve_stage(1, Raw = {as, DevID, SubReq}, Req, Opts) ->
     % Set the device of the message to the specified one and resolve the sub-path.
     % As this is the first message, we will then continue to execute the request
@@ -272,15 +272,15 @@ resolve_stage(1, Raw = {as, DevID, SubReq}, Req, Opts) ->
             ),
             OtherRes
     end;
-resolve_stage(1, RawMsg1, Msg2Outer = #{ <<"path">> := {as, DevID, Msg2Inner} }, Opts) ->
+resolve_stage(1, RawBase, ReqOuter = #{ <<"path">> := {as, DevID, ReqInner} }, Opts) ->
     % Set the device to the specified `DevID' and resolve the message. Merging
-    % the `Msg2Inner' into the `Msg2Outer' message first. We return the result
+    % the `ReqInner' into the `ReqOuter' message first. We return the result
     % of the sub-resolution directly.
     ?event(ao_core, {stage, 1, subresolving_from_request, {dev, DevID}}, Opts),
-    LoadedInner = ensure_message_loaded(Msg2Inner, Opts),
+    LoadedInner = ensure_message_loaded(ReqInner, Opts),
     Req =
         hb_maps:merge(
-            set(Msg2Outer, <<"path">>, unset, Opts),
+            set(ReqOuter, <<"path">>, unset, Opts),
             if is_binary(LoadedInner) -> #{ <<"path">> => LoadedInner };
             true -> LoadedInner
             end,
@@ -292,7 +292,7 @@ resolve_stage(1, RawMsg1, Msg2Outer = #{ <<"path">> := {as, DevID, Msg2Inner} },
             {req, Req}
         }
     ),
-    subresolve(RawMsg1, DevID, Req, Opts);
+    subresolve(RawBase, DevID, Req, Opts);
 resolve_stage(1, {resolve, Subres}, Req, Opts) ->
     % If the first message is a `{resolve, Subres}' tuple, we should execute it
     % directly, then apply the request to the result.
@@ -354,15 +354,15 @@ resolve_stage(1, Base, Req, Opts) when is_list(Base) ->
         Req,
         Opts
     );
-resolve_stage(1, Base, NonMapMsg2, Opts) when not is_map(NonMapMsg2) ->
+resolve_stage(1, Base, NonMapReq, Opts) when not is_map(NonMapReq) ->
     ?event(ao_core, {stage, 1, path_normalize}),
-    resolve_stage(1, Base, #{ <<"path">> => NonMapMsg2 }, Opts);
-resolve_stage(1, RawMsg1, RawMsg2, Opts) ->
+    resolve_stage(1, Base, #{ <<"path">> => NonMapReq }, Opts);
+resolve_stage(1, RawBase, RawReq, Opts) ->
     % Normalize the path to a private key containing the list of remaining
     % keys to resolve.
     ?event(ao_core, {stage, 1, normalize}, Opts),
-    Base = normalize_keys(RawMsg1, Opts),
-    Req = normalize_keys(RawMsg2, Opts),
+    Base = normalize_keys(RawBase, Opts),
+    Req = normalize_keys(RawReq, Opts),
     resolve_stage(2, Base, Req, Opts);
 resolve_stage(2, Base, Req, Opts) ->
     ?event(ao_core, {stage, 2, cache_lookup}, Opts),
@@ -374,8 +374,8 @@ resolve_stage(2, Base, Req, Opts) ->
         {ok, Res} ->
             ?event(ao_core, {stage, 2, cache_hit, {res, Res}, {opts, Opts}}, Opts),
             {ok, Res};
-        {continue, NewMsg1, NewMsg2} ->
-            resolve_stage(3, NewMsg1, NewMsg2, Opts);
+        {continue, NewBase, NewReq} ->
+            resolve_stage(3, NewBase, NewReq, Opts);
         {error, CacheResp} -> {error, CacheResp}
     end;
 resolve_stage(3, Base, Req, Opts) when not is_map(Base) or not is_map(Req) ->
@@ -620,13 +620,13 @@ resolve_stage(9, Base, Req, {ok, Res}, ExecName, Opts) when is_map(Res) ->
     resolve_stage(10, Base, Req,
         case hb_opts:get(hashpath, update, Opts#{ only => local }) of
             update ->
-                NormMsg3 = Res,
-                Priv = hb_private:from_message(NormMsg3),
+                NormRes = Res,
+                Priv = hb_private:from_message(NormRes),
                 HP = hb_path:hashpath(Base, Req, Opts),
                 if not is_binary(HP) or not is_map(Priv) ->
-                    throw({invalid_hashpath, {hp, HP}, {res, NormMsg3}});
+                    throw({invalid_hashpath, {hp, HP}, {res, NormRes}});
                 true ->
-                    {ok, NormMsg3#{ <<"priv">> => Priv#{ <<"hashpath">> => HP } }}
+                    {ok, NormRes#{ <<"priv">> => Priv#{ <<"hashpath">> => HP } }}
                 end;
             reset ->
                 Priv = hb_private:from_message(Res),
@@ -979,12 +979,12 @@ keys(Msg, Opts, remove) ->
 %% Like the `get/3' function, this function honors the `error_strategy' option.
 %% `set' works with maps and recursive paths while maintaining the appropriate
 %% `HashPath' for each step.
-set(RawMsg1, RawMsg2, Opts) when is_map(RawMsg2) ->
-    Base = normalize_keys(RawMsg1, Opts),
+set(RawBase, RawReq, Opts) when is_map(RawReq) ->
+    Base = normalize_keys(RawBase, Opts),
     Req =
         hb_maps:without(
             [<<"hashpath">>, <<"priv">>],
-            normalize_keys(RawMsg2, Opts),
+            normalize_keys(RawReq, Opts),
             Opts
         ),
     ?event(ao_internal, {set_called, {base, Base}, {req, Req}}, Opts),

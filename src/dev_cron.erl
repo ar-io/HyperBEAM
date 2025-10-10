@@ -91,7 +91,7 @@ every(_Base, Req, Opts) ->
 					ok
 				end,
 				ReqMsgID = hb_message:id(Req, all, Opts),
-				ModifiedMsg2 =
+				ModifiedReq =
                     hb_maps:without(
                         [
                             <<"interval">>,
@@ -106,7 +106,7 @@ every(_Base, Req, Opts) ->
                         fun() ->
                             every_worker_loop(
                                 CronPath,
-                                ModifiedMsg2,
+                                ModifiedReq,
                                 Opts,
                                 IntervalMillis
                             )
