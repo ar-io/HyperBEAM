@@ -336,11 +336,11 @@ minimization_test() ->
 match_modes_test() ->
     Base = #{ <<"a">> => 1, <<"b">> => 2 },
     Req = #{ <<"a">> => 1 },
-    Msg3 = #{ <<"a">> => 1, <<"b">> => 2, <<"c">> => 3 },
+    Res = #{ <<"a">> => 1, <<"b">> => 2, <<"c">> => 3 },
     ?assert(hb_message:match(Base, Req, only_present)),
     ?assert(hb_message:match(Req, Base, strict) =/= true),
-    ?assert(hb_message:match(Base, Msg3, primary)),
-    ?assert(hb_message:match(Msg3, Base, primary) =/= true).
+    ?assert(hb_message:match(Base, Res, primary)),
+    ?assert(hb_message:match(Res, Base, primary) =/= true).
 
 basic_message_codec_test(Codec, Opts) ->
     Msg = #{ <<"normal_key">> => <<"NORMAL_VALUE">> },

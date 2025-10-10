@@ -71,7 +71,7 @@ server(GroupName, Base, Opts) ->
             server(
                 GroupName,
                 case Res of
-                    {ok, Msg3} -> Msg3;
+                    {ok, Res} -> Res;
                     _ -> Base
                 end,
                 Opts
@@ -132,18 +132,18 @@ await(Worker, GroupName, Base, Req, Opts) ->
     end.
 
 %% @doc Notify any waiters for a specific slot of the computed results.
-notify_compute(GroupName, SlotToNotify, Msg3, Opts) ->
-    notify_compute(GroupName, SlotToNotify, Msg3, Opts, 0).
-notify_compute(GroupName, SlotToNotify, Msg3, Opts, Count) ->
+notify_compute(GroupName, SlotToNotify, Res, Opts) ->
+    notify_compute(GroupName, SlotToNotify, Res, Opts, 0).
+notify_compute(GroupName, SlotToNotify, Res, Opts, Count) ->
     ?event({notifying_of_computed_slot, {group, GroupName}, {slot, SlotToNotify}}),
     receive
         {resolve, Listener, GroupName, #{ <<"slot">> := SlotToNotify }, _ListenerOpts} ->
-            send_notification(Listener, GroupName, SlotToNotify, Msg3),
-            notify_compute(GroupName, SlotToNotify, Msg3, Opts, Count + 1);
+            send_notification(Listener, GroupName, SlotToNotify, Res),
+            notify_compute(GroupName, SlotToNotify, Res, Opts, Count + 1);
         {resolve, Listener, GroupName, Msg, _ListenerOpts}
                 when is_map(Msg) andalso not is_map_key(<<"slot">>, Msg) ->
-            send_notification(Listener, GroupName, SlotToNotify, Msg3),
-            notify_compute(GroupName, SlotToNotify, Msg3, Opts, Count + 1)
+            send_notification(Listener, GroupName, SlotToNotify, Res),
+            notify_compute(GroupName, SlotToNotify, Res, Opts, Count + 1)
     after 0 ->
         ?event(worker_short,
             {finished_notifying,
@@ -154,9 +154,9 @@ notify_compute(GroupName, SlotToNotify, Msg3, Opts, Count) ->
         )
     end.
 
-send_notification(Listener, GroupName, SlotToNotify, Msg3) ->
+send_notification(Listener, GroupName, SlotToNotify, Res) ->
     ?event({sending_notification, {group, GroupName}, {slot, SlotToNotify}}),
-    Listener ! {resolved, self(), GroupName, {slot, SlotToNotify}, Msg3}.
+    Listener ! {resolved, self(), GroupName, {slot, SlotToNotify}, Res}.
 
 %% @doc Stop a worker process.
 stop(Worker) ->

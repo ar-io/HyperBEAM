@@ -662,12 +662,12 @@ full_push_test_() ->
         {ok, StartingMsgSlot} =
             hb_ao:resolve(Req, #{ <<"path">> => <<"slot">> }, Opts),
         ?event({starting_msg_slot, StartingMsgSlot}),
-        Msg3 =
+        Res =
             #{
                 <<"path">> => <<"push">>,
                 <<"slot">> => StartingMsgSlot
             },
-        {ok, _} = hb_ao:resolve(Base, Msg3, Opts),
+        {ok, _} = hb_ao:resolve(Base, Res, Opts),
         ?assertEqual(
             {ok, <<"Done.">>},
             hb_ao:resolve(Base, <<"now/results/data">>, Opts)
@@ -724,12 +724,12 @@ push_as_identity_test_() ->
         {ok, StartingMsgSlot} =
             hb_ao:resolve(Req, #{ <<"path">> => <<"slot">> }, Opts),
         ?event({starting_msg_slot, StartingMsgSlot}),
-        Msg3 =
+        Res =
             #{
                 <<"path">> => <<"push">>,
                 <<"slot">> => StartingMsgSlot
             },
-        {ok, _} = hb_ao:resolve(Base, Msg3, Opts),
+        {ok, _} = hb_ao:resolve(Base, Res, Opts),
         ?assertEqual(
             {ok, <<"Done.">>},
             hb_ao:resolve(Base, <<"now/results/data">>, Opts)
@@ -795,13 +795,13 @@ multi_process_push_test_() ->
         ),
         SlotToPush = hb_ao:get(<<"slot">>, ToPush, Opts),
         ?event(push, {slot_to_push_proc2, SlotToPush}),
-        Msg3 =
+        Res =
             #{
                 <<"path">> => <<"push">>,
                 <<"slot">> => SlotToPush,
                 <<"result-depth">> => 1
             },
-        {ok, PushResult} = hb_ao:resolve(Proc2, Msg3, Opts),
+        {ok, PushResult} = hb_ao:resolve(Proc2, Res, Opts),
         ?event(push, {push_result_proc2, PushResult}),
         AfterPush = hb_ao:resolve(Proc2, <<"now/results/data">>, Opts),
         ?event(push, {after_push, AfterPush}),
@@ -879,8 +879,8 @@ push_with_redirect_hint_test_disabled() ->
             ),
         SlotToPush = hb_ao:get(<<"slot">>, ToPush, LocalOpts),
         ?event(push, {slot_to_push_client, SlotToPush}),
-        Msg3 = #{ <<"path">> => <<"push">>, <<"slot">> => SlotToPush },
-        {ok, PushResult} = hb_ao:resolve(Client, Msg3, LocalOpts),
+        Res = #{ <<"path">> => <<"push">>, <<"slot">> => SlotToPush },
+        {ok, PushResult} = hb_ao:resolve(Client, Res, LocalOpts),
         ?event(push, {push_result_client, PushResult}),
         AfterPush = hb_ao:resolve(Client, <<"now/results/data">>, LocalOpts),
         ?event(push, {after_push, AfterPush}),
@@ -936,12 +936,12 @@ oracle_push() ->
     Client = dev_process:test_aos_process(),
     {ok, _} = hb_cache:write(Client, #{}),
     {ok, _} = dev_process:schedule_aos_call(Client, oracle_script()),
-    Msg3 =
+    Res =
         #{
             <<"path">> => <<"push">>,
             <<"slot">> => 0
         },
-    {ok, PushResult} = hb_ao:resolve(Client, Msg3, #{ priv_wallet => hb:wallet() }),
+    {ok, PushResult} = hb_ao:resolve(Client, Res, #{ priv_wallet => hb:wallet() }),
     ?event({result, PushResult}),
     ComputeRes =
         hb_ao:resolve(
@@ -984,12 +984,12 @@ nested_push_prompts_encoding_change() ->
     {ok, StartingMsgSlot} =
         hb_ao:resolve(Req, #{ <<"path">> => <<"slot">> }, Opts),
     ?event({starting_msg_slot, StartingMsgSlot}),
-    Msg3 =
+    Res =
         #{
             <<"path">> => <<"push">>,
             <<"slot">> => StartingMsgSlot
         },
-    {ok, Res} = hb_ao:resolve(Base, Msg3, Opts),
+    {ok, Res} = hb_ao:resolve(Base, Res, Opts),
     ?event(push, {res, Res}),
     Msg = hb_message:commit(#{
         <<"path">> => <<"push">>,

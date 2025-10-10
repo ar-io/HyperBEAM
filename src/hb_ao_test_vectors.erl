@@ -591,7 +591,7 @@ deep_set_new_messages_test() ->
             }
         )
     ),
-    Msg3 = hb_ao:set(
+    Res = hb_ao:set(
         Req,
         #{ 
             <<"z/a">> => <<"0">>,
@@ -602,7 +602,7 @@ deep_set_new_messages_test() ->
     ),
     ?assert(
         hb_message:match(
-            Msg3,
+            Res,
             #{
                 <<"a">> => #{ <<"b">> => #{ <<"c">> => <<"1">> } },
                 <<"d">> => #{ <<"e">> => <<"3">>, <<"f">> => <<"4">> },
@@ -684,17 +684,17 @@ device_exports_test(Opts) ->
                 }
             end
     },
-    Msg3 = #{ <<"device">> => Dev2, <<"test1">> => <<"BAD1">>, <<"test3">> => <<"GOOD3">> },
-    ?assertEqual(<<"Handler-Value">>, hb_ao:get(<<"test1">>, Msg3, Opts)),
-    ?assertEqual(<<"Handler-Value">>, hb_ao:get(<<"test2">>, Msg3, Opts)),
-    ?assertEqual(<<"GOOD3">>, hb_ao:get(<<"test3">>, Msg3, Opts)),
+    Res = #{ <<"device">> => Dev2, <<"test1">> => <<"BAD1">>, <<"test3">> => <<"GOOD3">> },
+    ?assertEqual(<<"Handler-Value">>, hb_ao:get(<<"test1">>, Res, Opts)),
+    ?assertEqual(<<"Handler-Value">>, hb_ao:get(<<"test2">>, Res, Opts)),
+    ?assertEqual(<<"GOOD3">>, hb_ao:get(<<"test3">>, Res, Opts)),
     ?assertEqual(<<"GOOD4">>,
         hb_ao:get(
             <<"test4">>,
-            hb_ao:set(Msg3, <<"test4">>, <<"GOOD4">>, Opts)
+            hb_ao:set(Res, <<"test4">>, <<"GOOD4">>, Opts)
         )
     ),
-    ?assertEqual(not_found, hb_ao:get(<<"test5">>, Msg3, Opts)).
+    ?assertEqual(not_found, hb_ao:get(<<"test5">>, Res, Opts)).
 
 device_excludes_test(Opts) ->
     % Create a device that returns an identifiable message for any key, but also

@@ -124,10 +124,10 @@ find_or_register(GroupName, _Base, _Req, Opts) ->
     end.
 
 %% @doc Unregister as the leader for an execution and notify waiting processes.
-unregister_notify(ungrouped_exec, _Req, _Msg3, _Opts) -> ok;
-unregister_notify(GroupName, Req, Msg3, Opts) ->
+unregister_notify(ungrouped_exec, _Req, _Res, _Opts) -> ok;
+unregister_notify(GroupName, Req, Res, Opts) ->
     unregister_groupname(GroupName, Opts),
-    notify(GroupName, Req, Msg3, Opts).
+    notify(GroupName, Req, Res, Opts).
 
 %% @doc Find a group with the given name.
 find_execution(Groupname, _Opts) ->
@@ -208,7 +208,7 @@ default_await(Worker, GroupName, Base, Req, Opts) ->
 %% of this execution. Comes in two forms:
 %% 1. Notify on group name alone.
 %% 2. Notify on group name and Req.
-notify(GroupName, Req, Msg3, Opts) ->
+notify(GroupName, Req, Res, Opts) ->
     case is_binary(GroupName) of
         true ->
             ?event({notifying_all, {group, GroupName}});
@@ -218,8 +218,8 @@ notify(GroupName, Req, Msg3, Opts) ->
     receive
         {resolve, Listener, GroupName, Req, _ListenerOpts} ->
             ?event({notifying_listener, {listener, Listener}, {group, GroupName}}),
-            send_response(Listener, GroupName, Req, Msg3),
-            notify(GroupName, Req, Msg3, Opts)
+            send_response(Listener, GroupName, Req, Res),
+            notify(GroupName, Req, Res, Opts)
     after 0 ->
         ?event(finished_notify),
         ok
@@ -248,15 +248,15 @@ forward_work(NewPID, Opts) ->
     end,
     ok.
 
-%% @doc Helper function that wraps responding with a new Msg3.
-send_response(Listener, GroupName, Req, Msg3) ->
+%% @doc Helper function that wraps responding with a new Res.
+send_response(Listener, GroupName, Req, Res) ->
     ?event(worker,
         {send_response,
             {listener, Listener},
             {group, GroupName}
         }
     ),
-    Listener ! {resolved, self(), GroupName, Req, Msg3}.
+    Listener ! {resolved, self(), GroupName, Req, Res}.
 
 %% @doc Start a worker process that will hold a message in memory for
 %% future executions.
@@ -340,10 +340,10 @@ default_worker(GroupName, Base, Opts) ->
                 false ->
                     % Register for the new (Base) group.
                     case Res of
-                        {ok, Msg3} ->
-                            NewGroupName = group(Msg3, undefined, Opts),
+                        {ok, Res} ->
+                            NewGroupName = group(Res, undefined, Opts),
                             register_groupname(NewGroupName, Opts),
-                            default_worker(NewGroupName, Msg3, Opts);
+                            default_worker(NewGroupName, Res, Opts);
                         _ ->
                             % If the result is not ok, we should either ignore
                             % the error and stay on the existing group,
@@ -472,11 +472,11 @@ persistent_worker_test() ->
     link(start_worker(Base, #{ static_worker => true })),
     receive after 10 -> ok end,
     Req = #{ <<"path">> => <<"slow_key">>, <<"wait">> => TestTime },
-    Msg3 = #{ <<"path">> => <<"slow_key">>, <<"wait">> => trunc(TestTime*1.1) },
+    Res = #{ <<"path">> => <<"slow_key">>, <<"wait">> => trunc(TestTime*1.1) },
     Msg4 = #{ <<"path">> => <<"slow_key">>, <<"wait">> => trunc(TestTime*1.2) },
     T0 = hb:now(),
     Ref1 = spawn_test_client(Base, Req),
-    Ref2 = spawn_test_client(Base, Msg3),
+    Ref2 = spawn_test_client(Base, Res),
     Ref3 = spawn_test_client(Base, Msg4),
     Res1 = wait_for_test_result(Ref1),
     Res2 = wait_for_test_result(Ref2),
@@ -491,7 +491,7 @@ spawn_after_execution_test() ->
     TestTime = 500,
     Base = #{ <<"device">> => test_device() },
     Req = #{ <<"path">> => <<"self">>, <<"wait">> => TestTime },
-    Msg3 = #{ <<"path">> => <<"slow_key">>, <<"wait">> => trunc(TestTime*1.1) },
+    Res = #{ <<"path">> => <<"slow_key">>, <<"wait">> => trunc(TestTime*1.1) },
     Msg4 = #{ <<"path">> => <<"slow_key">>, <<"wait">> => trunc(TestTime*1.2) },
     T0 = hb:now(),
     Ref1 =
@@ -505,7 +505,7 @@ spawn_after_execution_test() ->
             }
         ),
     receive after 10 -> ok end,
-    Ref2 = spawn_test_client(Base, Msg3),
+    Ref2 = spawn_test_client(Base, Res),
     Ref3 = spawn_test_client(Base, Msg4),
     Res1 = wait_for_test_result(Ref1),
     Res2 = wait_for_test_result(Ref2),

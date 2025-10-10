@@ -87,7 +87,7 @@
 %%% The HyperBEAM resolver also takes a number of runtime options that change
 %%% the way that the environment operates:
 %%% 
-%%% `update_hashpath':  Whether to add the `Req' to `HashPath' for the `Msg3'.
+%%% `update_hashpath':  Whether to add the `Req' to `HashPath' for the `Res'.
 %%% 					Default: true.
 %%% `add_key':          Whether to add the key to the start of the arguments.
 %%% 					Default: `<not set>'.
@@ -196,24 +196,24 @@ resolve_many(MsgList, Opts) ->
     Res.
 do_resolve_many([], _Opts) ->
     {failure, <<"Attempted to resolve an empty message sequence.">>};
-do_resolve_many([Msg3], Opts) ->
-    ?event(ao_core, {stage, 11, resolve_complete, Msg3}),
-    hb_cache:ensure_loaded(maybe_force_message(Msg3, Opts), Opts);
+do_resolve_many([Res], Opts) ->
+    ?event(ao_core, {stage, 11, resolve_complete, Res}),
+    hb_cache:ensure_loaded(maybe_force_message(Res, Opts), Opts);
 do_resolve_many([Base, Req | MsgList], Opts) ->
     ?event(ao_core, {stage, 0, resolve_many, {base, Base}, {req, Req}}),
     case resolve_stage(1, Base, Req, Opts) of
-        {ok, Msg3} ->
+        {ok, Res} ->
             ?event(ao_core,
                 {
                     stage,
                     13,
                     resolved_step,
-                    {msg3, Msg3},
+                    {res, Res},
                     {opts, Opts}
                 },
 				Opts
             ),
-            do_resolve_many([Msg3 | MsgList], Opts);
+            do_resolve_many([Res | MsgList], Opts);
         Res ->
             % The result is not a resolvable message. Return it.
             ?event(ao_core, {stage, 13, resolve_many_terminating_early, Res}),
@@ -371,9 +371,9 @@ resolve_stage(2, Base, Req, Opts) ->
     % unless the cache lookup returns `halt' (the user has requested that we 
     % only return a result if it is already in the cache).
     case hb_cache_control:maybe_lookup(Base, Req, Opts) of
-        {ok, Msg3} ->
-            ?event(ao_core, {stage, 2, cache_hit, {msg3, Msg3}, {opts, Opts}}, Opts),
-            {ok, Msg3};
+        {ok, Res} ->
+            ?event(ao_core, {stage, 2, cache_hit, {res, Res}, {opts, Opts}}, Opts),
+            {ok, Res};
         {continue, NewMsg1, NewMsg2} ->
             resolve_stage(3, NewMsg1, NewMsg2, Opts);
         {error, CacheResp} -> {error, CacheResp}
@@ -538,7 +538,7 @@ resolve_stage(6, Func, Base, Req, ExecName, Opts) ->
                     {exec_name, ExecName},
                     {base, Base},
                     {req, Req},
-                    {msg3, MsgRes}
+                    {res, MsgRes}
                 },
                 Opts
             ),
@@ -613,54 +613,54 @@ resolve_stage(8, Base, Req, {ok, {resolve, Sublist}}, ExecName, Opts) ->
 resolve_stage(8, Base, Req, Res, ExecName, Opts) ->
     ?event(ao_core, {stage, 8, ExecName, no_subresolution_necessary}, Opts),
     resolve_stage(9, Base, Req, Res, ExecName, Opts);
-resolve_stage(9, Base, Req, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
+resolve_stage(9, Base, Req, {ok, Res}, ExecName, Opts) when is_map(Res) ->
     ?event(ao_core, {stage, 9, ExecName, generate_hashpath}, Opts),
     % Cryptographic linking. Now that we have generated the result, we
     % need to cryptographically link the output to its input via a hashpath.
     resolve_stage(10, Base, Req,
         case hb_opts:get(hashpath, update, Opts#{ only => local }) of
             update ->
-                NormMsg3 = Msg3,
+                NormMsg3 = Res,
                 Priv = hb_private:from_message(NormMsg3),
                 HP = hb_path:hashpath(Base, Req, Opts),
                 if not is_binary(HP) or not is_map(Priv) ->
-                    throw({invalid_hashpath, {hp, HP}, {msg3, NormMsg3}});
+                    throw({invalid_hashpath, {hp, HP}, {res, NormMsg3}});
                 true ->
                     {ok, NormMsg3#{ <<"priv">> => Priv#{ <<"hashpath">> => HP } }}
                 end;
             reset ->
-                Priv = hb_private:from_message(Msg3),
-                {ok, Msg3#{ <<"priv">> => hb_maps:without([<<"hashpath">>], Priv, Opts) }};
+                Priv = hb_private:from_message(Res),
+                {ok, Res#{ <<"priv">> => hb_maps:without([<<"hashpath">>], Priv, Opts) }};
             ignore ->
-                Priv = hb_private:from_message(Msg3),
+                Priv = hb_private:from_message(Res),
                 if not is_map(Priv) ->
-                    throw({invalid_private_message, {msg3, Msg3}});
+                    throw({invalid_private_message, {res, Res}});
                 true ->
-                    {ok, Msg3}
+                    {ok, Res}
                 end
         end,
         ExecName,
         Opts
     );
-resolve_stage(9, Base, Req, {Status, Msg3}, ExecName, Opts) when is_map(Msg3) ->
+resolve_stage(9, Base, Req, {Status, Res}, ExecName, Opts) when is_map(Res) ->
     ?event(ao_core, {stage, 9, ExecName, abnormal_status_reset_hashpath}, Opts),
     ?event(hashpath, {resetting_hashpath_msg3, {base, Base}, {req, Req}, {opts, Opts}}),
     % Skip cryptographic linking and reset the hashpath if the result is abnormal.
-    Priv = hb_private:from_message(Msg3),
+    Priv = hb_private:from_message(Res),
     resolve_stage(
         10, Base, Req,
-        {Status, Msg3#{ <<"priv">> => maps:without([<<"hashpath">>], Priv) }},
+        {Status, Res#{ <<"priv">> => maps:without([<<"hashpath">>], Priv) }},
         ExecName, Opts);
 resolve_stage(9, Base, Req, Res, ExecName, Opts) ->
     ?event(ao_core, {stage, 9, ExecName, non_map_result_skipping_hash_path}, Opts),
     % Skip cryptographic linking and continue if we don't have a map that can have
     % a hashpath at all.
     resolve_stage(10, Base, Req, Res, ExecName, Opts);
-resolve_stage(10, Base, Req, {ok, Msg3}, ExecName, Opts) ->
+resolve_stage(10, Base, Req, {ok, Res}, ExecName, Opts) ->
     ?event(ao_core, {stage, 10, ExecName, result_caching}, Opts),
     % Result caching: Optionally, cache the result of the computation locally.
-    hb_cache_control:maybe_store(Base, Req, Msg3, Opts),
-    resolve_stage(11, Base, Req, {ok, Msg3}, ExecName, Opts);
+    hb_cache_control:maybe_store(Base, Req, Res, Opts),
+    resolve_stage(11, Base, Req, {ok, Res}, ExecName, Opts);
 resolve_stage(10, Base, Req, Res, ExecName, Opts) ->
     ?event(ao_core, {stage, 10, ExecName, abnormal_status_skip_caching}, Opts),
     % Skip result caching if the result is abnormal.
@@ -671,15 +671,15 @@ resolve_stage(11, Base, Req, Res, ExecName, Opts) ->
     % unregister ourselves from the group.
     hb_persistent:unregister_notify(ExecName, Req, Res, Opts),
     resolve_stage(12, Base, Req, Res, ExecName, Opts);
-resolve_stage(12, _Base, _Req, {ok, Msg3} = Res, ExecName, Opts) ->
+resolve_stage(12, _Base, _Req, {ok, Res} = Res, ExecName, Opts) ->
     ?event(ao_core, {stage, 12, ExecName, maybe_spawn_worker}, Opts),
     % Check if we should fork out a new worker process for the current execution
-    case {is_map(Msg3), hb_opts:get(spawn_worker, false, Opts#{ prefer => local })} of
+    case {is_map(Res), hb_opts:get(spawn_worker, false, Opts#{ prefer => local })} of
         {A, B} when (A == false) or (B == false) ->
             Res;
         {_, _} ->
             % Spawn a worker for the current execution
-            WorkerPID = hb_persistent:start_worker(ExecName, Msg3, Opts),
+            WorkerPID = hb_persistent:start_worker(ExecName, Res, Opts),
             hb_persistent:forward_work(WorkerPID, Opts),
             Res
     end;

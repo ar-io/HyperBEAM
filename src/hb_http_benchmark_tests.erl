@@ -179,12 +179,12 @@
 % %         BenchWorkers
 % %     ),
 % %     ?event(benchmark, {scheduled, Iterations}),
-% %     Msg3 = #{
+% %     Res = #{
 % %         <<"path">> => <<"slot">>,
 % %         <<"method">> => <<"GET">>,
 % %         <<"process">> => ProcID
 % %     },
-% %     Res = hb_http:post(URL, Msg3),
+% %     Res = hb_http:post(URL, Res),
 % %     ?event({slot_result, Res}),
 % %     hb_formatter:eunit_print(
 % %         "Scheduled ~p messages through AO-Core in ~p seconds (~.2f msg/s)",

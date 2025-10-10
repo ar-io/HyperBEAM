@@ -511,14 +511,14 @@ basic_aos_call_test_() ->
 		Msg = generate_stack("test/aos-2-pure-xs.wasm"),
 		Proc = hb_ao:get(<<"process">>, Msg, #{ hashpath => ignore }),
 		ProcID = hb_message:id(Proc, all),
-		{ok, Msg3} =
+		{ok, Res} =
 			hb_ao:resolve(
 				Msg,
 				generate_aos_msg(ProcID, <<"return 1+1">>),
 				#{}
 			),
-		?event({res, Msg3}),
-		Data = hb_ao:get(<<"results/data">>, Msg3, #{}),
+		?event({res, Res}),
+		Data = hb_ao:get(<<"results/data">>, Res, #{}),
 		?assertEqual(<<"2">>, Data)
 	end}.
 

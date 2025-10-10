@@ -897,7 +897,7 @@ set_conflicting_keys_test() ->
 unset_with_set_test() ->
 	Base = #{ <<"dangerous">> => <<"Value1">> },
 	Req = #{ <<"path">> => <<"set">>, <<"dangerous">> => unset },
-	?assertMatch({ok, Msg3} when ?IS_EMPTY_MESSAGE(Msg3),
+	?assertMatch({ok, Res} when ?IS_EMPTY_MESSAGE(Res),
 		hb_ao:resolve(Base, Req, #{ hashpath => ignore })).
 
 deep_unset_test() ->
@@ -916,14 +916,14 @@ deep_unset_test() ->
         },
         Req
     ),
-    Msg3 = hb_ao:set(Req, <<"deep/test-key3">>, unset, Opts),
+    Res = hb_ao:set(Req, <<"deep/test-key3">>, unset, Opts),
     ?assertEqual(#{
             <<"test-key1">> => <<"Value1">>,
             <<"deep">> => #{}
         },
-        Msg3
+        Res
     ),
-    Msg4 = hb_ao:set(Msg3, #{ <<"deep">> => unset }, Opts),
+    Msg4 = hb_ao:set(Res, #{ <<"deep">> => unset }, Opts),
     ?assertEqual(#{ <<"test-key1">> => <<"Value1">> }, Msg4).
 
 set_ignore_undefined_test() ->

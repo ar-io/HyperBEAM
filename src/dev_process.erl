@@ -417,15 +417,15 @@ compute_slot(ProcID, State, RawInputMsg, ReqMsg, Opts) ->
 
 %% @doc Store the resulting state in the cache, potentially with the snapshot
 %% key.
-store_result(ForceSnapshot, ProcID, Slot, Msg3, Req, Opts) ->
+store_result(ForceSnapshot, ProcID, Slot, Res, Req, Opts) ->
     % Cache the `Snapshot' key as frequently as the node is configured to.
     Msg3MaybeWithSnapshot =
-        case ForceSnapshot orelse should_snapshot(Slot, Msg3, Opts) of
-            false -> Msg3;
+        case ForceSnapshot orelse should_snapshot(Slot, Res, Opts) of
+            false -> Res;
             true ->
                 ?event(compute_debug,
                     {snapshotting, {proc_id, ProcID}, {slot, Slot}}, Opts),
-                {ok, Snapshot} = snapshot(Msg3, Req, Opts),
+                {ok, Snapshot} = snapshot(Res, Req, Opts),
 				?event(snapshot,
 					{got_snapshot,
 						{storing_as_slot, Slot},
@@ -442,7 +442,7 @@ store_result(ForceSnapshot, ProcID, Slot, Msg3, Req, Opts) ->
                 ),
 				WithLastSnapshot =
                     hb_private:set(
-                        Msg3#{ <<"snapshot">> => Snapshot },
+                        Res#{ <<"snapshot">> => Snapshot },
                         <<"last-snapshot">>,
                         os:system_time(second),
                         Opts
@@ -476,9 +476,9 @@ store_result(ForceSnapshot, ProcID, Slot, Msg3, Req, Opts) ->
 %% since the last snapshot is greater than the value. We also check the
 %% `process_snapshot_slots' option. If it is set, we check if the slot is
 %% a multiple of the interval. If either are true, we must snapshot.
-should_snapshot(Slot, Msg3, Opts) ->
+should_snapshot(Slot, Res, Opts) ->
     should_snapshot_slots(Slot, Opts)
-        orelse should_snapshot_time(Msg3, Opts).
+        orelse should_snapshot_time(Res, Opts).
 
 %% @doc Calculate if we should snapshot based on the number of slots.
 should_snapshot_slots(Slot, Opts) ->
@@ -492,19 +492,19 @@ should_snapshot_slots(Slot, Opts) ->
 
 %% @doc Calculate if we should snapshot based on the elapsed time since the last
 %% snapshot.
-should_snapshot_time(Msg3, Opts) ->
+should_snapshot_time(Res, Opts) ->
     case hb_opts:get(process_snapshot_time, ?DEFAULT_SNAPSHOT_TIME, Opts) of
         Undef when (Undef == undefined) or (Undef == <<"false">>) ->
             false;
         RawSecs ->
             Secs = hb_util:int(RawSecs),
-            case hb_private:get(<<"last-snapshot">>, Msg3, undefined, Opts) of
+            case hb_private:get(<<"last-snapshot">>, Res, undefined, Opts) of
                 undefined ->
                     ?event(
                         debug_interval,
                         {no_last_snapshot,
                             {interval, Secs},
-                            {msg, Msg3}
+                            {msg, Res}
                         }
                     ),
                     true;
@@ -1011,24 +1011,24 @@ test_device_compute_test() ->
         )
     ),
     Req = #{ <<"path">> => <<"compute">>, <<"slot">> => 1 },
-    {ok, Msg3} = hb_ao:resolve(Base, Req, #{}),
-    ?event({computed_message, {msg3, Msg3}}),
-    ?assertEqual(1, hb_ao:get(<<"results/assignment-slot">>, Msg3, #{})),
-    ?assertEqual([1,1,0,0], hb_ao:get(<<"already-seen">>, Msg3, #{})).
+    {ok, Res} = hb_ao:resolve(Base, Req, #{}),
+    ?event({computed_message, {res, Res}}),
+    ?assertEqual(1, hb_ao:get(<<"results/assignment-slot">>, Res, #{})),
+    ?assertEqual([1,1,0,0], hb_ao:get(<<"already-seen">>, Res, #{})).
 
 wasm_compute_test() ->
     init(),
     Base = test_wasm_process(<<"test/test-64.wasm">>),
     schedule_wasm_call(Base, <<"fac">>, [5.0]),
     schedule_wasm_call(Base, <<"fac">>, [6.0]),
-    {ok, Msg3} = 
+    {ok, Res} = 
         hb_ao:resolve(
             Base,
             #{ <<"path">> => <<"compute">>, <<"slot">> => 0 },
             #{ <<"hashpath">> => ignore }
         ),
-    ?event({computed_message, {msg3, Msg3}}),
-    ?assertEqual([120.0], hb_ao:get(<<"results/output">>, Msg3, #{})),
+    ?event({computed_message, {res, Res}}),
+    ?assertEqual([120.0], hb_ao:get(<<"results/output">>, Res, #{})),
     {ok, Msg4} = 
        hb_ao:resolve(
             Base,
@@ -1045,9 +1045,9 @@ wasm_compute_from_id_test() ->
     schedule_wasm_call(Base, <<"fac">>, [5.0], Opts),
     Msg1ID = hb_message:id(Base, all),
     Req = #{ <<"path">> => <<"compute">>, <<"slot">> => 0 },
-    {ok, Msg3} = hb_ao:resolve(Msg1ID, Req, Opts),
-    ?event(process_compute, {computed_message, {msg3, Msg3}}),
-    ?assertEqual([120.0], hb_ao:get(<<"results/output">>, Msg3, Opts)).
+    {ok, Res} = hb_ao:resolve(Msg1ID, Req, Opts),
+    ?event(process_compute, {computed_message, {res, Res}}),
+    ?assertEqual([120.0], hb_ao:get(<<"results/output">>, Res, Opts)).
 
 http_wasm_process_by_id_test() ->
     rand:seed(default),
@@ -1083,8 +1083,8 @@ http_wasm_process_by_id_test() ->
         },
         Wallet
     ),
-    {ok, Msg3} = hb_http:post(Node, << ProcID/binary, "/schedule">>, ExecMsg, #{}),
-    ?event({schedule_msg_res, {msg3, Msg3}}),
+    {ok, Res} = hb_http:post(Node, << ProcID/binary, "/schedule">>, ExecMsg, #{}),
+    ?event({schedule_msg_res, {res, Res}}),
     {ok, Msg4} =
         hb_http:get(
             Node,
@@ -1104,16 +1104,16 @@ aos_compute_test_() ->
         schedule_aos_call(Base, <<"return 1+1">>),
         schedule_aos_call(Base, <<"return 2+2">>),
         Req = #{ <<"path">> => <<"compute">>, <<"slot">> => 0 },
-        {ok, Msg3} = hb_ao:resolve(Base, Req, #{}),
-        {ok, Res} = hb_ao:resolve(Msg3, <<"results">>, #{}),
-        ?event({computed_message, {msg3, Res}}),
-        {ok, Data} = hb_ao:resolve(Res, <<"data">>, #{}),
+        {ok, Res1} = hb_ao:resolve(Base, Req, #{}),
+        {ok, Res2} = hb_ao:resolve(Res1, <<"results">>, #{}),
+        ?event({computed_message, {res2, Res2}}),
+        {ok, Data} = hb_ao:resolve(Res2, <<"data">>, #{}),
         ?event({computed_data, Data}),
         ?assertEqual(<<"2">>, Data),
         Msg4 = #{ <<"path">> => <<"compute">>, <<"slot">> => 1 },
-        {ok, Msg5} = hb_ao:resolve(Base, Msg4, #{}),
-        ?assertEqual(<<"4">>, hb_ao:get(<<"results/data">>, Msg5, #{})),
-        {ok, Msg5}
+        {ok, Res3} = hb_ao:resolve(Res2, Msg4, #{}),
+        ?assertEqual(<<"4">>, hb_ao:get(<<"results/data">>, Res3, #{})),
+        {ok, Res3}
     end}.
 
 aos_browsable_state_test_() ->
@@ -1126,14 +1126,14 @@ aos_browsable_state_test_() ->
                 "data = { deep = 4, bool = true } })">>
         ),
         Req = #{ <<"path">> => <<"compute">>, <<"slot">> => 0 },
-        {ok, Msg3} =
+        {ok, Res} =
             hb_ao:resolve_many(
                 [Base, Req, <<"results">>, <<"outbox">>, 1, <<"data">>, <<"deep">>],
                 #{ cache_control => <<"always">> }
             ),
         ID = hb_message:id(Base),
         ?event({computed_message, {id, {explicit, ID}}}),
-        ?assertEqual(4, Msg3)
+        ?assertEqual(4, Res)
     end}.
 
 aos_state_access_via_http_test_() ->
@@ -1166,8 +1166,8 @@ aos_state_access_via_http_test_() ->
                     "}})">>,
             <<"target">> => ProcID
         }, Wallet),
-        {ok, Msg3} = hb_http:post(Node, << ProcID/binary, "/schedule">>, Req, Opts),
-        ?event({schedule_msg_res, {msg3, Msg3}}),
+        {ok, Res} = hb_http:post(Node, << ProcID/binary, "/schedule">>, Req, Opts),
+        ?event({schedule_msg_res, {res, Res}}),
         {ok, Msg4} =
             hb_http:get(
                 Node,
@@ -1220,9 +1220,9 @@ aos_state_patch_test_() ->
                 >>
         }, Wallet))#{ <<"path">> => <<"schedule">>, <<"method">> => <<"POST">> },
         {ok, _} = hb_ao:resolve(Base, Req, #{}),
-        Msg3 = #{ <<"path">> => <<"compute">>, <<"slot">> => 0 },
-        {ok, Msg4} = hb_ao:resolve(Base, Msg3, #{}),
-        ?event({computed_message, {msg3, Msg4}}),
+        Res = #{ <<"path">> => <<"compute">>, <<"slot">> => 0 },
+        {ok, Msg4} = hb_ao:resolve(Base, Res, #{}),
+        ?event({computed_message, {res, Msg4}}),
         {ok, Data} = hb_ao:resolve(Msg4, <<"x">>, #{}),
         ?event({computed_data, Data}),
         ?assertEqual(<<"banana">>, Data)
@@ -1317,7 +1317,7 @@ persistent_process_test() ->
             <<"slot">> => 2
         },
         Res = hb_ao:resolve(Base, ThirdSlotMsg2, #{}),
-        ?event({computed_message, {msg3, Res}}),
+        ?event({computed_message, {res, Res}}),
         ?assertMatch(
             {ok, _},
             Res

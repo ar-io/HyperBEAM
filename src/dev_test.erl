@@ -211,8 +211,8 @@ compute_test() ->
             },
             #{}
         ),
-    {ok, Msg3} = hb_ao:resolve(Base, Req, #{}),
-    ?assertEqual(1, hb_ao:get(<<"results/assignment-slot">>, Msg3, #{})),
+    {ok, Res} = hb_ao:resolve(Base, Req, #{}),
+    ?assertEqual(1, hb_ao:get(<<"results/assignment-slot">>, Res, #{})),
     Msg4 =
         hb_ao:set(
             #{ <<"path">> => <<"compute">> },
@@ -222,11 +222,11 @@ compute_test() ->
             },
             #{}
         ),
-    {ok, Msg5} = hb_ao:resolve(Msg3, Msg4, #{}),
+    {ok, Msg5} = hb_ao:resolve(Res, Msg4, #{}),
     ?assertEqual(2, hb_ao:get(<<"results/assignment-slot">>, Msg5, #{})),
     ?assertEqual([2, 1], hb_ao:get(<<"already-seen">>, Msg5, #{})).
 
 restore_test() ->
     Base = #{ <<"device">> => <<"test-device@1.0">>, <<"already-seen">> => [1] },
-    {ok, Msg3} = hb_ao:resolve(Base, <<"restore">>, #{}),
-    ?assertEqual([1], hb_private:get(<<"test-key/started-state">>, Msg3, #{})).
+    {ok, Res} = hb_ao:resolve(Base, <<"restore">>, #{}),
+    ?assertEqual([1], hb_private:get(<<"test-key/started-state">>, Res, #{})).

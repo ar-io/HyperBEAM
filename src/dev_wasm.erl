@@ -132,7 +132,7 @@ default_import_resolver(Base, Req, Opts) ->
         func_sig := Signature
     } = Req,
     Prefix = dev_stack:prefix(Base, Req, Opts),
-    {ok, Msg3} =
+    {ok, Res} =
         hb_ao:resolve(
             hb_private:set(
                 Base,
@@ -148,8 +148,8 @@ default_import_resolver(Base, Req, Opts) ->
             },
             Opts
         ),
-    NextState = hb_ao:get(state, Msg3, Opts),
-    Response = hb_ao:get(results, Msg3, Opts),
+    NextState = hb_ao:get(state, Res, Opts),
+    Response = hb_ao:get(results, Res, Opts),
     {ok, Response, NextState}.
 
 %% @doc Call the WASM executor with a message that has been prepared by a prior
@@ -351,7 +351,7 @@ undefined_import_stub(Base, Req, Opts) ->
     Prefix = dev_stack:prefix(Base, Req, Opts),
     UndefinedCallsPath =
         <<"state/results/", Prefix/binary, "/undefined-calls">>,
-    Msg3 = hb_ao:set(
+    Res = hb_ao:set(
         Base,
         #{
             UndefinedCallsPath =>
@@ -366,7 +366,7 @@ undefined_import_stub(Base, Req, Opts) ->
         },
         Opts
     ),
-    {ok, #{ state => Msg3, results => [0] }}.
+    {ok, #{ state => Res, results => [0] }}.
 
 %%% Tests
 
@@ -408,9 +408,9 @@ process_prefixes_test() ->
             <<"input-prefix">> => <<"process">>,
             <<"process">> => cache_wasm_image("test/test.wasm")
         },
-    {ok, Msg3} = hb_ao:resolve(Base, <<"init">>, #{}),
-    ?event({after_init, Msg3}),
-    Priv = hb_private:from_message(Msg3),
+    {ok, Res} = hb_ao:resolve(Base, <<"init">>, #{}),
+    ?event({after_init, Res}),
+    Priv = hb_private:from_message(Res),
     ?assertMatch(
         {ok, Instance} when is_pid(Instance),
         hb_ao:resolve(Priv, <<"wasm/instance">>, #{})

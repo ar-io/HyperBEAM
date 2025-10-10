@@ -14,19 +14,19 @@
 %%% dependent on all previous messages.
 %%% <pre>
 %%%     Base.HashPath = Base.ID
-%%%     Msg3.HashPath = Base.Hash(Base.HashPath, Req.ID)
-%%%     Msg3.{...} = AO-Core.apply(Base, Req)
+%%%     Res.HashPath = Base.Hash(Base.HashPath, Req.ID)
+%%%     Res.{...} = AO-Core.apply(Base, Req)
 %%%     ...
 %%% </pre>
 %%% 
 %%% A message's ID itself includes its HashPath, leading to the mixing of
-%%% a Req's merkle list into the resulting Msg3's HashPath. This allows a single
+%%% a Req's merkle list into the resulting Res's HashPath. This allows a single
 %%% message to represent a history _tree_ of all of the messages that were
 %%% applied to generate it -- rather than just a linear history.
 %%% 
 %%% A message may also specify its own algorithm for generating its HashPath,
 %%% which allows for custom logic to be used for representing the history of a
-%%% message. When Req's are applied to a Base, the resulting Msg3's HashPath
+%%% message. When Req's are applied to a Base, the resulting Res's HashPath
 %%% will be generated according to Base's algorithm choice.
 -module(hb_path).
 -export([hashpath/2, hashpath/3, hashpath/4, hashpath_alg/2]).
@@ -218,13 +218,13 @@ queue_request(Msg, Path, Opts) ->
 	
 %%% @doc Verify the HashPath of a message, given a list of messages that
 %%% represent its history.
-verify_hashpath([Base, Req, Msg3|Rest], Opts) ->
+verify_hashpath([Base, Req, Res|Rest], Opts) ->
     CorrectHashpath = hashpath(Base, Req, Opts),
-    FromMsg3 = from_message(hashpath, Msg3, Opts),
+    FromMsg3 = from_message(hashpath, Res, Opts),
     CorrectHashpath == FromMsg3 andalso
         case Rest of
             [] -> true;
-            _ -> verify_hashpath([Req, Msg3|Rest], Opts)
+            _ -> verify_hashpath([Req, Res|Rest], Opts)
         end.
 
 %% @doc Extract the request path or hashpath from a message. We do not use
@@ -345,18 +345,18 @@ hashpath_direct_msg2_test() ->
 multiple_hashpaths_test() ->
     Base = #{ <<"empty">> => <<"message">> },
     Req = #{ <<"exciting">> => <<"message2">> },
-    Msg3 = #{ priv => #{<<"hashpath">> => hashpath(Base, Req, #{}) } },
+    Res = #{ priv => #{<<"hashpath">> => hashpath(Base, Req, #{}) } },
     Msg4 = #{ <<"exciting">> => <<"message4">> },
-    Msg5 = hashpath(Msg3, Msg4, #{}),
+    Msg5 = hashpath(Res, Msg4, #{}),
     ?assert(is_binary(Msg5)).
 
 verify_hashpath_test() ->
     Base = #{ <<"test">> => <<"initial">> },
     Req = #{ <<"firstapplied">> => <<"req">> },
-    Msg3 = #{ priv => #{<<"hashpath">> => hashpath(Base, Req, #{})} },
-    Msg4 = #{ priv => #{<<"hashpath">> => hashpath(Req, Msg3, #{})} },
+    Res = #{ priv => #{<<"hashpath">> => hashpath(Base, Req, #{})} },
+    Msg4 = #{ priv => #{<<"hashpath">> => hashpath(Req, Res, #{})} },
     Msg3Fake = #{ priv => #{<<"hashpath">> => hashpath(Msg4, Req, #{})} },
-    ?assert(verify_hashpath([Base, Req, Msg3, Msg4], #{})),
+    ?assert(verify_hashpath([Base, Req, Res, Msg4], #{})),
     ?assertNot(verify_hashpath([Base, Req, Msg3Fake, Msg4], #{})).
 
 validate_path_transitions(X, Opts) ->
@@ -408,9 +408,9 @@ term_to_path_parts_test() ->
 % calculate_multistage_hashpath_test() ->
 %     Base = #{ <<"base">> => <<"message">> },
 %     Req = #{ <<"path">> => <<"2">> },
-%     Msg3 = #{ <<"path">> => <<"3">> },
+%     Res = #{ <<"path">> => <<"3">> },
 %     Msg4 = #{ <<"path">> => <<"4">> },
-%     Msg5 = hashpath(Base, [Req, Msg3, Msg4], #{}),
+%     Msg5 = hashpath(Base, [Req, Res, Msg4], #{}),
 %     ?assert(is_binary(Msg5)),
 %     Msg3Path = <<"3">>,
 %     Msg5b = hashpath(Base, [Req, Msg3Path, Msg4]),

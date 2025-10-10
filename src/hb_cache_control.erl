@@ -17,15 +17,15 @@
 %% @doc Write a resulting M3 message to the cache if requested. The precedence
 %% order of cache control sources is as follows:
 %% 1. The `Opts' map (letting the node operator have the final say).
-%% 2. The `Msg3' results message (granted by Base's device).
+%% 2. The `Res' results message (granted by Base's device).
 %% 3. The `Req' message (the user's request).
 %% Base is not used, such that it can specify cache control information about 
 %% itself, without affecting its outputs.
-maybe_store(Base, Req, Msg3, Opts) ->
-    case derive_cache_settings([Msg3, Req], Opts) of
+maybe_store(Base, Req, Res, Opts) ->
+    case derive_cache_settings([Res, Req], Opts) of
         #{ <<"store">> := true } ->
-            ?event(caching, {caching_result, {base, Base}, {req, Req}, {msg3, Msg3}}),
-            dispatch_cache_write(Base, Req, Msg3, Opts);
+            ?event(caching, {caching_result, {base, Base}, {req, Req}, {res, Res}}),
+            dispatch_cache_write(Base, Req, Res, Opts);
         _ -> 
             not_caching
     end.
@@ -64,7 +64,7 @@ lookup(Base, Req, Opts) ->
                         {cache_hit,
                             {base, Base},
                             {req, Req},
-                            {msg3, Res}
+                            {res, Res}
                         }
                     ),
                     {ok, Res};
@@ -102,13 +102,13 @@ lookup(Base, Req, Opts) ->
 
 %% @doc Dispatch the cache write to a worker process if requested.
 %% Invoke the appropriate cache write function based on the type of the message.
-dispatch_cache_write(Base, Req, Msg3, Opts) ->
+dispatch_cache_write(Base, Req, Res, Opts) ->
     case hb_opts:get(async_cache, false, Opts) of
         true ->
-            find_or_spawn_async_writer(Opts) ! {write, Base, Req, Msg3, Opts},
+            find_or_spawn_async_writer(Opts) ! {write, Base, Req, Res, Opts},
             ok;
         false ->
-            perform_cache_write(Base, Req, Msg3, Opts)
+            perform_cache_write(Base, Req, Res, Opts)
     end.
 
 %% @doc Find our async cacher process, or spawn one if none exists.
@@ -125,26 +125,26 @@ find_or_spawn_async_writer(_Opts) ->
 %% @doc Optional worker process to write messages to the cache.
 async_writer() ->
     receive
-        {write, Base, Req, Msg3, Opts} ->
-            perform_cache_write(Base, Req, Msg3, Opts);
+        {write, Base, Req, Res, Opts} ->
+            perform_cache_write(Base, Req, Res, Opts);
         stop -> ok
     end.
 
 %% @doc Internal function to write a compute result to the cache.
-perform_cache_write(Base, Req, Msg3, Opts) ->
+perform_cache_write(Base, Req, Res, Opts) ->
     hb_cache:write(Base, Opts),
     hb_cache:write(Req, Opts),
-    case Msg3 of
+    case Res of
         <<_/binary>> ->
             hb_cache:write_binary(
                 hb_path:hashpath(Base, Req, Opts),
-                Msg3,
+                Res,
                 Opts
             );
         Map when is_map(Map) ->
-            hb_cache:write(Msg3, Opts);
+            hb_cache:write(Res, Opts);
         _ ->
-            ?event({cannot_write_result, Msg3}),
+            ?event({cannot_write_result, Res}),
             skip_caching
     end.
 
@@ -299,18 +299,18 @@ specifiers_to_cache_settings(RawCCList) ->
 msg_with_cc(CC) -> #{ <<"cache-control">> => CC }.
 opts_with_cc(CC) -> #{ cache_control => CC }.
 
-%% Test precedence order (Opts > Msg3 > Req)
+%% Test precedence order (Opts > Res > Req)
 opts_override_message_settings_test() ->
     Req = msg_with_cc([<<"no-store">>]),
-    Msg3 = msg_with_cc([<<"no-cache">>]),
+    Res = msg_with_cc([<<"no-cache">>]),
     Opts = opts_with_cc([<<"always">>]),
-    Result = derive_cache_settings([Msg3, Req], Opts),
+    Result = derive_cache_settings([Res, Req], Opts),
     ?assertEqual(#{<<"store">> => true, <<"lookup">> => true}, Result).
 
 msg_precidence_overrides_test() ->
     Req = msg_with_cc([<<"always">>]),
-    Msg3 = msg_with_cc([<<"no-store">>]),  % No restrictions
-    Result = derive_cache_settings([Msg3, Req], opts_with_cc([])),
+    Res = msg_with_cc([<<"no-store">>]),  % No restrictions
+    Result = derive_cache_settings([Res, Req], opts_with_cc([])),
     ?assertEqual(#{<<"store">> => false, <<"lookup">> => true}, Result).
 
 %% Test specific directives

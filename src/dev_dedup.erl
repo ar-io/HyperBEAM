@@ -127,10 +127,10 @@ dedup_test() ->
     % Send the same message twice, with the same binary.
     {ok, Req} = hb_ao:resolve(Msg,
         #{ <<"path">> => <<"append">>, <<"bin">> => <<"_">> }, #{}),
-    {ok, Msg3} = hb_ao:resolve(Req,
+    {ok, Res} = hb_ao:resolve(Req,
         #{ <<"path">> => <<"append">>, <<"bin">> => <<"_">> }, #{}),
     % Send the same message twice, with another binary.
-    {ok, Msg4} = hb_ao:resolve(Msg3,
+    {ok, Msg4} = hb_ao:resolve(Res,
         #{ <<"path">> => <<"append">>, <<"bin">> => <<"/">> }, #{}),
     {ok, Msg5} = hb_ao:resolve(Msg4,
         #{ <<"path">> => <<"append">>, <<"bin">> => <<"/">> }, #{}),
@@ -160,9 +160,9 @@ dedup_with_multipass_test() ->
 	},
     % Send the same message twice, with the same binary.
     {ok, Req} = hb_ao:resolve(Msg, #{ <<"path">> => <<"append">>, <<"bin">> => <<"_">> }, #{}),
-    {ok, Msg3} = hb_ao:resolve(Req, #{ <<"path">> => <<"append">>, <<"bin">> => <<"_">> }, #{}),
+    {ok, Res} = hb_ao:resolve(Req, #{ <<"path">> => <<"append">>, <<"bin">> => <<"_">> }, #{}),
     % Send the same message twice, with another binary.
-    {ok, Msg4} = hb_ao:resolve(Msg3, #{ <<"path">> => <<"append">>, <<"bin">> => <<"/">> }, #{}),
+    {ok, Msg4} = hb_ao:resolve(Res, #{ <<"path">> => <<"append">>, <<"bin">> => <<"/">> }, #{}),
     {ok, Msg5} = hb_ao:resolve(Msg4, #{ <<"path">> => <<"append">>, <<"bin">> => <<"/">> }, #{}),
     % Ensure that downstream devices have only seen each message once.
     ?assertMatch(

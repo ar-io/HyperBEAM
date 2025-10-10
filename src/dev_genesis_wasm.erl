@@ -30,11 +30,11 @@ normalize(Msg, Req, Opts) ->
 compute(Msg, Req, Opts) ->
     % Validate whether the genesis-wasm feature is enabled.
     case delegate_request(Msg, Req, Opts) of
-        {ok, Msg3} ->
+        {ok, Res} ->
             % Resolve the `patch@1.0' device.
             {ok, Msg4} =
                 hb_ao:resolve(
-                    Msg3,
+                    Res,
                     {
                         as,
                         <<"patch@1.0">>,
@@ -75,10 +75,10 @@ delegate_request(Msg, Req, Opts) ->
 do_compute(Msg, Req, Opts) ->
     % Resolve the `delegated-compute@1.0' device.
     case hb_ao:resolve(Msg, {as, <<"delegated-compute@1.0">>, Req}, Opts) of
-        {ok, Msg3} ->
+        {ok, Res} ->
             PatchResult = 
                 hb_ao:resolve(
-                    Msg3,
+                    Res,
                     {
                         as,
                         <<"patch@1.0">>,

@@ -86,7 +86,7 @@
 %%% 		dev_stack:execute ->
 %%% 			/Base/Set?device=/Device-Stack/1 ->
 %%% 			/Req/AlicesExcitingKey ->
-%%% 			/Msg3/Set?device=/Device-Stack/2 ->
+%%% 			/Res/Set?device=/Device-Stack/2 ->
 %%% 			/Msg4/AlicesExcitingKey
 %%% 			... ->
 %%% 			/MsgN/Set?device=[This-Device] ->
@@ -626,11 +626,11 @@ input_and_output_prefixes_test() ->
             <<"in1">> => #{ <<"example">> => 1 },
             <<"in2">> => #{ <<"example">> => 2 }
         },
-    {ok, Msg3} = hb_ao:resolve(Base, Req, #{}),
+    {ok, Res} = hb_ao:resolve(Base, Req, #{}),
     ?assertMatch(1,
-        hb_ao:get(<<"out1/example">>, {as, dev_message, Msg3}, #{})),
+        hb_ao:get(<<"out1/example">>, {as, dev_message, Res}, #{})),
     ?assertMatch(2,
-        hb_ao:get(<<"out2/example">>, {as, dev_message, Msg3}, #{})).
+        hb_ao:get(<<"out2/example">>, {as, dev_message, Res}, #{})).
 
 input_output_prefixes_passthrough_test() ->
     Base =
@@ -728,13 +728,13 @@ not_found_test() ->
 			},
 		<<"result">> => <<"INIT">>
 	},
-    {ok, Msg3} = hb_ao:resolve(Msg, #{ <<"path">> => <<"append">>, <<"bin">> => <<"_">> }, #{}),
+    {ok, Res} = hb_ao:resolve(Msg, #{ <<"path">> => <<"append">>, <<"bin">> => <<"_">> }, #{}),
     ?assertMatch(
 		#{ <<"result">> := <<"INIT+D1_+D2_">> },
-		Msg3
+		Res
 	),
-    ?event({ex3, Msg3}),
-    ?assertEqual(1337, hb_ao:get(<<"special/output">>, Msg3, #{})).
+    ?event({ex3, Res}),
+    ?assertEqual(1337, hb_ao:get(<<"special/output">>, Res, #{})).
 
 simple_map_test() ->
     Msg = #{
@@ -746,11 +746,11 @@ simple_map_test() ->
             },
         <<"result">> => <<"INIT">>
     },
-    {ok, Msg3} =
+    {ok, Res} =
         hb_ao:resolve(
             Msg,
             #{ <<"path">> => <<"append">>, <<"mode">> => <<"Map">>, <<"bin">> => <<"/">> },
             #{}
         ),
-    ?assertMatch(<<"INIT+D1/">>, hb_ao:get(<<"1/result">>, Msg3, #{})),
-    ?assertMatch(<<"INIT+D2/">>, hb_ao:get(<<"2/result">>, Msg3, #{})).
+    ?assertMatch(<<"INIT+D1/">>, hb_ao:get(<<"1/result">>, Res, #{})),
+    ?assertMatch(<<"INIT+D2/">>, hb_ao:get(<<"2/result">>, Res, #{})).

@@ -1746,16 +1746,16 @@ schedule_message_and_get_slot_test() ->
     },
     ?assertMatch({ok, _}, hb_ao:resolve(Base, Req, #{})),
     ?assertMatch({ok, _}, hb_ao:resolve(Base, Req, #{})),
-    Msg3 = #{
+    Res = #{
         <<"path">> => <<"slot">>,
         <<"method">> => <<"GET">>,
         <<"process">> => hb_util:id(Base)
     },
     ?event({pg, dev_scheduler_registry:get_processes()}),
-    ?event({getting_schedule, {msg, Msg3}}),
+    ?event({getting_schedule, {msg, Res}}),
     ?assertMatch({ok, #{ <<"current">> := CurrentSlot }}
             when CurrentSlot > 0,
-        hb_ao:resolve(Base, Msg3, #{})).
+        hb_ao:resolve(Base, Res, #{})).
 
 redirect_to_hint_test() ->
     start(),
@@ -1826,7 +1826,7 @@ get_local_schedule_test() ->
                 <<"test-key">> => <<"Test-Val">>
             }, hb:wallet())
     },
-    Msg3 = #{
+    Res = #{
         <<"path">> => <<"schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> =>
@@ -1836,7 +1836,7 @@ get_local_schedule_test() ->
             }, hb:wallet())
     },
     ?assertMatch({ok, _}, hb_ao:resolve(Base, Req, #{})),
-    ?assertMatch({ok, _}, hb_ao:resolve(Base, Msg3, #{})),
+    ?assertMatch({ok, _}, hb_ao:resolve(Base, Res, #{})),
     ?assertMatch(
         {ok, _},
         hb_ao:resolve(Base, #{
@@ -2143,14 +2143,14 @@ single_resolution(Opts) ->
         BenchTime
     ),
     ?event(benchmark, {scheduled, Iterations}),
-    Msg3 = #{
+    Res = #{
         <<"path">> => <<"slot">>,
         <<"method">> => <<"GET">>,
         <<"process">> => hb_util:human_id(hb_message:id(Base, all, Opts))
     },
     ?assertMatch({ok, #{ <<"current">> := CurrentSlot }}
             when CurrentSlot == Iterations - 1,
-        hb_ao:resolve(Base, Msg3, Opts)),
+        hb_ao:resolve(Base, Res, Opts)),
     ?event(bench, {res, Iterations - 1}),
     hb_test_utils:benchmark_print(
         <<"Scheduled through AO-Core:">>,
