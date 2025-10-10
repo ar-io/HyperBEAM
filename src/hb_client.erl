@@ -15,7 +15,7 @@
 %% The message pair is first transformed into a singleton request, by
 %% prefixing the keys in both messages for the path segment that they relate to,
 %% and then adjusting the "Path" field from the second message.
-resolve(Node, Msg1, Msg2, Opts) ->
+resolve(Node, Base, Msg2, Opts) ->
     TABM2 =
         hb_ao:set(
             #{
@@ -27,7 +27,7 @@ resolve(Node, Msg1, Msg2, Opts) ->
     ),
     hb_http:post(
         Node,
-        hb_maps:merge(prefix_keys(<<"1.">>, Msg1, Opts), TABM2, Opts),
+        hb_maps:merge(prefix_keys(<<"1.">>, Base, Opts), TABM2, Opts),
         Opts
     ).
 

@@ -9,17 +9,17 @@
 
 %% @doc Initialize or normalize the compute-lite device. For now, we don't
 %% need to do anything special here.
-init(Msg1, _Msg2, _Opts) ->
-    {ok, Msg1}.
+init(Base, _Msg2, _Opts) ->
+    {ok, Base}.
 
 %% @doc We assume that the compute engine stores its own internal state,
 %% with snapshots triggered only when HyperBEAM requests them. Subsequently,
 %% to load a snapshot, we just need to return the original message.
-normalize(Msg1, _Msg2, Opts) ->
-    case hb_maps:find(<<"snapshot">>, Msg1, Opts) of
-        error -> {ok, Msg1};
+normalize(Base, _Msg2, Opts) ->
+    case hb_maps:find(<<"snapshot">>, Base, Opts) of
+        error -> {ok, Base};
         {ok, Snapshot} ->
-            Unset = hb_ao:set(Msg1, #{ <<"snapshot">> => unset }, Opts),
+            Unset = hb_ao:set(Base, #{ <<"snapshot">> => unset }, Opts),
             case hb_maps:get(<<"type">>, Snapshot, Opts) == <<"Checkpoint">> of
                 false -> Unset;
                 true ->
@@ -49,11 +49,11 @@ load_state(Snapshot, Opts) ->
 %% @doc Call the delegated server to compute the result. The endpoint is
 %% `POST /compute' and the body is the JSON-encoded message that we want to
 %% evaluate.
-compute(Msg1, Msg2, Opts) ->
-    OutputPrefix = dev_stack:prefix(Msg1, Msg2, Opts),
+compute(Base, Msg2, Opts) ->
+    OutputPrefix = dev_stack:prefix(Base, Msg2, Opts),
     % Extract the process ID - this identifies which process to run compute
     % against.
-    ProcessID = get_process_id(Msg1, Msg2, Opts),
+    ProcessID = get_process_id(Base, Msg2, Opts),
     % If request is an assignment, we will compute the result
     % Otherwise, it is a dryrun
     Type = hb_ao:get(<<"type">>, Msg2, not_found, Opts),
@@ -69,7 +69,7 @@ compute(Msg1, Msg2, Opts) ->
             _ ->
                 {dryrun, do_dryrun(ProcessID, Msg2, Opts)}
         end,
-    handle_relay_response(Msg1, Msg2, Opts, Res, OutputPrefix, ProcessID, Slot).
+    handle_relay_response(Base, Msg2, Opts, Res, OutputPrefix, ProcessID, Slot).
 
 %% @doc Execute computation on a remote machine via relay and the JSON-Iface.
 do_compute(ProcID, Msg2, Opts) ->
@@ -166,8 +166,8 @@ extract_json_res(Response, Opts) ->
             {error, Error}
     end.
 
-get_process_id(Msg1, Msg2, Opts) ->
-    RawProcessID = dev_process:process_id(Msg1, #{}, Opts),
+get_process_id(Base, Msg2, Opts) ->
+    RawProcessID = dev_process:process_id(Base, #{}, Opts),
     case RawProcessID of
         not_found -> hb_ao:get(<<"process-id">>, Msg2, Opts);
         ProcID -> ProcID
@@ -175,7 +175,7 @@ get_process_id(Msg1, Msg2, Opts) ->
 
 %% @doc Handle the response from the delegated compute server. Assumes that the
 %% response is in AOS2-style format, decoding with the JSON-Iface.
-handle_relay_response(Msg1, Msg2, Opts, Response, OutputPrefix, ProcessID, Slot) ->
+handle_relay_response(Base, Msg2, Opts, Response, OutputPrefix, ProcessID, Slot) ->
     case Response of 
         {ok, JSONRes} ->
             ?event(
@@ -189,7 +189,7 @@ handle_relay_response(Msg1, Msg2, Opts, Response, OutputPrefix, ProcessID, Slot)
             {ok, Msg} = dev_json_iface:json_to_message(JSONRes, Opts),
             {ok,
                 hb_ao:set(
-                    Msg1,
+                    Base,
                     #{
                         <<OutputPrefix/binary, "/results">> => Msg,
                         <<OutputPrefix/binary, "/results/json">> =>

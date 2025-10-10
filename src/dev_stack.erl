@@ -30,8 +30,8 @@
 %%% 
 %%% You can switch between fold and map modes by setting the `Mode' key in the
 %%% `Msg2' to either `Fold' or `Map', or set it globally for the stack by
-%%% setting the `Mode' key in the `Msg1' message. The key in `Msg2' takes
-%%% precedence over the key in `Msg1'.
+%%% setting the `Mode' key in the `Base' message. The key in `Msg2' takes
+%%% precedence over the key in `Base'.
 %%%
 %%% The key that is called upon the device stack is the same key that is used
 %%% upon the devices that are contained within it. For example, in the above
@@ -82,9 +82,9 @@
 %%% even as it delegates calls to other devices. An example flow for a `dev_stack'
 %%% execution is as follows:
 %%% <pre>
-%%% 	/Msg1/AlicesExcitingKey ->
+%%% 	/Base/AlicesExcitingKey ->
 %%% 		dev_stack:execute ->
-%%% 			/Msg1/Set?device=/Device-Stack/1 ->
+%%% 			/Base/Set?device=/Device-Stack/1 ->
 %%% 			/Msg2/AlicesExcitingKey ->
 %%% 			/Msg3/Set?device=/Device-Stack/2 ->
 %%% 			/Msg4/AlicesExcitingKey
@@ -117,16 +117,16 @@ info(Msg, Opts) ->
     ).
 
 %% @doc Return the default prefix for the stack.
-prefix(Msg1, _Msg2, Opts) ->
-    hb_ao:get(<<"output-prefix">>, {as, dev_message, Msg1}, <<"">>, Opts).
+prefix(Base, _Msg2, Opts) ->
+    hb_ao:get(<<"output-prefix">>, {as, dev_message, Base}, <<"">>, Opts).
 
 %% @doc Return the input prefix for the stack.
-input_prefix(Msg1, _Msg2, Opts) ->
-    hb_ao:get(<<"input-prefix">>, {as, dev_message, Msg1}, <<"">>, Opts).
+input_prefix(Base, _Msg2, Opts) ->
+    hb_ao:get(<<"input-prefix">>, {as, dev_message, Base}, <<"">>, Opts).
 
 %% @doc Return the output prefix for the stack.
-output_prefix(Msg1, _Msg2, Opts) ->
-    hb_ao:get(<<"output-prefix">>, {as, dev_message, Msg1}, <<"">>, Opts).
+output_prefix(Base, _Msg2, Opts) ->
+    hb_ao:get(<<"output-prefix">>, {as, dev_message, Base}, <<"">>, Opts).
 
 %% @doc The device stack key router. Sends the request to `resolve_stack',
 %% except for `set/2' which is handled by the default implementation in
@@ -162,13 +162,13 @@ router(Message1, Message2, Opts) ->
 %% takes the place of the original `Device' key. This allows users to call
 %% a single device from the stack:
 %%
-%% 	/Msg1/Transform/DeviceName/keyInDevice ->
-%% 		keyInDevice executed on DeviceName against Msg1.
-transformer_message(Msg1, Opts) ->
-	?event({creating_transformer, {for, Msg1}}),
-    BaseInfo = info(Msg1, Opts),
+%% 	/Base/Transform/DeviceName/keyInDevice ->
+%% 		keyInDevice executed on DeviceName against Base.
+transformer_message(Base, Opts) ->
+	?event({creating_transformer, {for, Base}}),
+    BaseInfo = info(Base, Opts),
 	{ok, 
-		Msg1#{
+		Base#{
 			<<"device">> => #{
 				info =>
 					fun() ->
@@ -192,10 +192,10 @@ transformer_message(Msg1, Opts) ->
 %% `Device-Stack' key in the message takes the place of the original `Device'
 %% key. This transformation allows dev_stack to correctly track the HashPath
 %% of the message as it delegates execution to devices contained within it.
-transform(Msg1, Key, Opts) ->
-	% Get the device stack message from Msg1.
-    ?event({transforming_stack, {key, Key}, {msg1, Msg1}, {opts, Opts}}),
-	case hb_ao:get(<<"device-stack">>, {as, dev_message, Msg1}, Opts) of
+transform(Base, Key, Opts) ->
+	% Get the device stack message from Base.
+    ?event({transforming_stack, {key, Key}, {msg1, Base}, {opts, Opts}}),
+	case hb_ao:get(<<"device-stack">>, {as, dev_message, Base}, Opts) of
         not_found -> throw({error, no_valid_device_stack});
         StackMsg ->
 			% Find the requested key in the device stack.
@@ -212,41 +212,41 @@ transform(Msg1, Key, Opts) ->
                     % - The prior prefixes for later restoration.
 					?event({activating_device, DevMsg}),
 					dev_message:set(
-                        Msg1,
+                        Base,
 						#{
 							<<"device">> => DevMsg,
                             <<"device-key">> => Key,
                             <<"input-prefix">> =>
                                 hb_ao:get(
                                     [<<"input-prefixes">>, Key],
-                                    {as, dev_message, Msg1},
+                                    {as, dev_message, Base},
                                     undefined,
                                     Opts
                                 ),
                             <<"output-prefix">> =>
                                 hb_ao:get(
                                     [<<"output-prefixes">>, Key],
-                                    {as, dev_message, Msg1},
+                                    {as, dev_message, Base},
                                     undefined,
                                     Opts
                                 ),
                             <<"previous-device">> =>
                                 hb_ao:get(
                                     <<"device">>,
-                                    {as, dev_message, Msg1},
+                                    {as, dev_message, Base},
                                     Opts
                                 ),
                             <<"previous-input-prefix">> =>
                                 hb_ao:get(
                                     <<"input-prefix">>,
-                                    {as, dev_message, Msg1},
+                                    {as, dev_message, Base},
                                     undefined,
                                     Opts
                                 ),
                             <<"previous-output-prefix">> =>
                                 hb_ao:get(
                                     <<"output-prefix">>,
-                                    {as, dev_message, Msg1},
+                                    {as, dev_message, Base},
                                     undefined,
                                     Opts
                                 )
@@ -413,7 +413,7 @@ generate_append_device(Separator, Status) ->
 %% by other functions in the module.
 transform_internal_call_device_test() ->
 	AppendDev = generate_append_device(<<"_">>),
-	Msg1 =
+	Base =
 		#{
 			<<"device">> => <<"stack@1.0">>,
 			<<"device-stack">> =>
@@ -426,14 +426,14 @@ transform_internal_call_device_test() ->
 		<<"message@1.0">>,
 		hb_ao:get(
 			<<"device">>,
-			element(2, transform(Msg1, <<"2">>, #{}))
+			element(2, transform(Base, <<"2">>, #{}))
 		)
 	).
 
 %% @doc Ensure we can generate a transformer message that can be called to
 %% return a version of msg1 with only that device attached.
 transform_external_call_device_test() ->
-	Msg1 = #{
+	Base = #{
 		<<"device">> => <<"stack@1.0">>,
 		<<"device-stack">> =>
 			#{
@@ -466,7 +466,7 @@ transform_external_call_device_test() ->
 	},
 	?assertMatch(
 		{ok, #{ <<"value">> := <<"Super-Cool">> }},
-		hb_ao:resolve(Msg1, #{
+		hb_ao:resolve(Base, #{
 			<<"path">> => <<"/transform/make-cool/value">>
 		}, #{})
 	).
@@ -597,7 +597,7 @@ no_prefix_test() ->
     ?assertMatch(1, hb_ao:get(<<"example">>, Ex1Msg3, #{})).
 
 output_prefix_test() ->
-    Msg1 =
+    Base =
         (test_prefix_msg())#{
             <<"output-prefixes">> => #{ <<"1">> => <<"out1/">>, <<"2">> => <<"out2/">> }
         },
@@ -607,14 +607,14 @@ output_prefix_test() ->
             <<"key">> => <<"example">>,
             <<"example">> => 1
         },
-    {ok, Ex2Msg3} = hb_ao:resolve(Msg1, Msg2, #{}),
+    {ok, Ex2Msg3} = hb_ao:resolve(Base, Msg2, #{}),
     ?assertMatch(1,
         hb_ao:get(<<"out1/example">>, {as, dev_message, Ex2Msg3}, #{})),
     ?assertMatch(1,
         hb_ao:get(<<"out2/example">>, {as, dev_message, Ex2Msg3}, #{})).
 
 input_and_output_prefixes_test() ->
-    Msg1 =
+    Base =
         (test_prefix_msg())#{
             <<"input-prefixes">> => #{ 1 => <<"in1/">>, 2 => <<"in2/">> },
             <<"output-prefixes">> => #{ 1 => <<"out1/">>, 2 => <<"out2/">> }
@@ -626,14 +626,14 @@ input_and_output_prefixes_test() ->
             <<"in1">> => #{ <<"example">> => 1 },
             <<"in2">> => #{ <<"example">> => 2 }
         },
-    {ok, Msg3} = hb_ao:resolve(Msg1, Msg2, #{}),
+    {ok, Msg3} = hb_ao:resolve(Base, Msg2, #{}),
     ?assertMatch(1,
         hb_ao:get(<<"out1/example">>, {as, dev_message, Msg3}, #{})),
     ?assertMatch(2,
         hb_ao:get(<<"out2/example">>, {as, dev_message, Msg3}, #{})).
 
 input_output_prefixes_passthrough_test() ->
-    Msg1 =
+    Base =
         (test_prefix_msg())#{
             <<"output-prefix">> => <<"combined-out/">>,
             <<"input-prefix">> => <<"combined-in/">>
@@ -644,7 +644,7 @@ input_output_prefixes_passthrough_test() ->
             <<"key">> => <<"example">>,
             <<"combined-in">> => #{ <<"example">> => 1 }
         },
-    {ok, Ex2Msg3} = hb_ao:resolve(Msg1, Msg2, #{}),
+    {ok, Ex2Msg3} = hb_ao:resolve(Base, Msg2, #{}),
     ?assertMatch(1,
         hb_ao:get(
             <<"combined-out/example">>,
@@ -676,7 +676,7 @@ reinvocation_test() ->
 	).
 
 skip_test() ->
-	Msg1 = #{
+	Base = #{
 		<<"device">> => <<"stack@1.0">>,
 		<<"device-stack">> =>
 			#{
@@ -688,7 +688,7 @@ skip_test() ->
 	?assertMatch(
 		{ok, #{ <<"result">> := <<"INIT+D12">> }},
 		hb_ao:resolve(
-			Msg1,
+			Base,
 			#{ <<"path">> => <<"append">>, <<"bin">> => <<"2">> },
             #{}
 		)

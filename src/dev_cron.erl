@@ -23,10 +23,10 @@ info(_Msg1, _Msg2, _Opts) ->
 	{ok, #{<<"status">> => 200, <<"body">> => InfoBody}}.
 
 %% @doc Default handler: Assume that the key is an interval descriptor.
-handler(<<"set">>, Msg1, Msg2, Opts) -> dev_message:set(Msg1, Msg2, Opts);
-handler(<<"keys">>, Msg1, _Msg2, _Opts) -> dev_message:keys(Msg1);
-handler(Interval, Msg1, Msg2, Opts) ->
-    every(Msg1, Msg2#{ <<"interval">> => Interval }, Opts).
+handler(<<"set">>, Base, Msg2, Opts) -> dev_message:set(Base, Msg2, Opts);
+handler(<<"keys">>, Base, _Msg2, _Opts) -> dev_message:keys(Base);
+handler(Interval, Base, Msg2, Opts) ->
+    every(Base, Msg2#{ <<"interval">> => Interval }, Opts).
 
 %% @doc Exported function for scheduling a one-time message.
 once(_Msg1, Msg2, Opts) ->

@@ -889,27 +889,27 @@ remove_test() ->
     ).
 
 set_conflicting_keys_test() ->
-	Msg1 = #{ <<"dangerous">> => <<"Value1">> },
+	Base = #{ <<"dangerous">> => <<"Value1">> },
 	Msg2 = #{ <<"path">> => <<"set">>, <<"dangerous">> => <<"Value2">> },
 	?assertMatch({ok, #{ <<"dangerous">> := <<"Value2">> }},
-		hb_ao:resolve(Msg1, Msg2, #{})).
+		hb_ao:resolve(Base, Msg2, #{})).
 
 unset_with_set_test() ->
-	Msg1 = #{ <<"dangerous">> => <<"Value1">> },
+	Base = #{ <<"dangerous">> => <<"Value1">> },
 	Msg2 = #{ <<"path">> => <<"set">>, <<"dangerous">> => unset },
 	?assertMatch({ok, Msg3} when ?IS_EMPTY_MESSAGE(Msg3),
-		hb_ao:resolve(Msg1, Msg2, #{ hashpath => ignore })).
+		hb_ao:resolve(Base, Msg2, #{ hashpath => ignore })).
 
 deep_unset_test() ->
     Opts = #{ hashpath => ignore },
-    Msg1 = #{
+    Base = #{
         <<"test-key1">> => <<"Value1">>,
         <<"deep">> => #{
             <<"test-key2">> => <<"Value2">>,
             <<"test-key3">> => <<"Value3">>
         }
     },
-    Msg2 = hb_ao:set(Msg1, #{ <<"deep/test-key2">> => unset }, Opts),
+    Msg2 = hb_ao:set(Base, #{ <<"deep/test-key2">> => unset }, Opts),
     ?assertEqual(#{
             <<"test-key1">> => <<"Value1">>,
             <<"deep">> => #{ <<"test-key3">> => <<"Value3">> }
@@ -927,10 +927,10 @@ deep_unset_test() ->
     ?assertEqual(#{ <<"test-key1">> => <<"Value1">> }, Msg4).
 
 set_ignore_undefined_test() ->
-	Msg1 = #{ <<"test-key">> => <<"Value1">> },
+	Base = #{ <<"test-key">> => <<"Value1">> },
 	Msg2 = #{ <<"path">> => <<"set">>, <<"test-key">> => undefined },
 	?assertEqual(#{ <<"test-key">> => <<"Value1">> },
-		hb_private:reset(hb_util:ok(set(Msg1, Msg2, #{ hashpath => ignore })))).
+		hb_private:reset(hb_util:ok(set(Base, Msg2, #{ hashpath => ignore })))).
 
 verify_test() ->
     Unsigned = #{ <<"a">> => <<"b">> },

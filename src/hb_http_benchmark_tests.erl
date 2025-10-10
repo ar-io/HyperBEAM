@@ -152,8 +152,8 @@
 % %     URL = hb_http_server:start_node(#{force_signed => true}),
 % %     BenchTime = 3,
 % %     BenchWorkers = 16,
-% %     Msg1 = dev_scheduler:test_process(),
-% %     Proc = hb_ao:get(process, Msg1, #{ hashpath => ignore }),
+% %     Base = dev_scheduler:test_process(),
+% %     Proc = hb_ao:get(process, Base, #{ hashpath => ignore }),
 % %     ProcID = hb_util:id(Proc),
 % %     ?event({benchmark_start, ?MODULE}),
 % %     Iterations = hb_test_utils:benchmark(

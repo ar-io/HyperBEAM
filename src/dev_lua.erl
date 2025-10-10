@@ -842,7 +842,7 @@ generate_test_message(Process, Opts, MsgBase) ->
 generate_stack(File) ->
     Wallet = hb:wallet(),
     {ok, Module} = file:read_file(File),
-    Msg1 = #{
+    Base = #{
         <<"device">> => <<"stack@1.0">>,
         <<"device-stack">> =>
             [
@@ -865,7 +865,7 @@ generate_stack(File) ->
                 <<"authority">> => hb:address()
             }, Wallet)
     },
-    {ok, Msg2} = hb_ao:resolve(Msg1, <<"init">>, #{}),
+    {ok, Msg2} = hb_ao:resolve(Base, <<"init">>, #{}),
     Msg2.
 
 % execute_aos_call(Base) ->

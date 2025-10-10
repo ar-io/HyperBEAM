@@ -573,8 +573,8 @@ deep_set_new_messages_test() ->
     Opts = hb_maps:get(opts, hd(test_opts())),
     % Test that new messages are created when the path does not exist.
     Msg0 = #{ <<"a">> => #{ <<"b">> => #{ <<"c">> => <<"1">> } } },
-    Msg1 = hb_ao:set(Msg0, <<"d/e">>, <<"3">>, Opts),
-    Msg2 = hb_ao:set(Msg1, <<"d/f">>, <<"4">>, Opts),
+    Base = hb_ao:set(Msg0, <<"d/e">>, <<"3">>, Opts),
+    Msg2 = hb_ao:set(Base, <<"d/f">>, <<"4">>, Opts),
     ?assert(
         hb_message:match(
             Msg2,
@@ -619,12 +619,12 @@ deep_set_new_messages_test() ->
 deep_set_with_device_test(Opts) ->
     Device = #{
         set =>
-            fun(Msg1, Msg2) ->
+            fun(Base, Msg2) ->
                 % A device where the set function modifies the key
                 % and adds a modified flag.
                 {Key, Val} =
                     hd(hb_maps:to_list(hb_maps:without([<<"path">>, <<"priv">>], Msg2, Opts), Opts)),
-                {ok, Msg1#{ Key => Val, <<"modified">> => true }}
+                {ok, Base#{ Key => Val, <<"modified">> => true }}
             end
     },
     % A message with an interspersed custom device: A and C have it,

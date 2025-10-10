@@ -644,20 +644,20 @@ full_push_test_() ->
             priv_wallet => hb:wallet(),
             cache_control => <<"always">>
         },
-        Msg1 = dev_process:test_aos_process(Opts),
-        hb_cache:write(Msg1, Opts),
+        Base = dev_process:test_aos_process(Opts),
+        hb_cache:write(Base, Opts),
         {ok, SchedInit} =
-            hb_ao:resolve(Msg1, #{
+            hb_ao:resolve(Base, #{
                 <<"method">> => <<"POST">>,
                 <<"path">> => <<"schedule">>,
-                <<"body">> => Msg1
+                <<"body">> => Base
             },
             Opts
         ),
-        ?event({test_setup, {msg1, Msg1}, {sched_init, SchedInit}}),
+        ?event({test_setup, {msg1, Base}, {sched_init, SchedInit}}),
         Script = ping_pong_script(2),
         ?event({script, Script}),
-        {ok, Msg2} = dev_process:schedule_aos_call(Msg1, Script, Opts),
+        {ok, Msg2} = dev_process:schedule_aos_call(Base, Script, Opts),
         ?event({msg_sched_result, Msg2}),
         {ok, StartingMsgSlot} =
             hb_ao:resolve(Msg2, #{ <<"path">> => <<"slot">> }, Opts),
@@ -667,10 +667,10 @@ full_push_test_() ->
                 <<"path">> => <<"push">>,
                 <<"slot">> => StartingMsgSlot
             },
-        {ok, _} = hb_ao:resolve(Msg1, Msg3, Opts),
+        {ok, _} = hb_ao:resolve(Base, Msg3, Opts),
         ?assertEqual(
             {ok, <<"Done.">>},
-            hb_ao:resolve(Msg1, <<"now/results/data">>, Opts)
+            hb_ao:resolve(Base, <<"now/results/data">>, Opts)
         )
     end}.
 
@@ -698,28 +698,28 @@ push_as_identity_test_() ->
         },
         % Create a new test AOS process, which will use the given identities as
         % its authority and scheduler.
-        Msg1 =
+        Base =
             dev_process:test_aos_process(
                 Opts#{
                     authority => ComputeID,
                     scheduler => [SchedulingID, ComputeID]
                 }
             ),
-        ?event({msg1, Msg1}),
+        ?event({msg1, Base}),
         % Perform the remainder of the test as with `full_push_test_/0'.
-        hb_cache:write(Msg1, Opts),
+        hb_cache:write(Base, Opts),
         {ok, SchedInit} =
-            hb_ao:resolve(Msg1, #{
+            hb_ao:resolve(Base, #{
                 <<"method">> => <<"POST">>,
                 <<"path">> => <<"schedule">>,
-                <<"body">> => Msg1
+                <<"body">> => Base
             },
             Opts
         ),
-        ?event({test_setup, {msg1, Msg1}, {sched_init, SchedInit}}),
+        ?event({test_setup, {msg1, Base}, {sched_init, SchedInit}}),
         Script = ping_pong_script(2),
         ?event({script, Script}),
-        {ok, Msg2} = dev_process:schedule_aos_call(Msg1, Script),
+        {ok, Msg2} = dev_process:schedule_aos_call(Base, Script),
         ?event(push, {msg_sched_result, Msg2}),
         {ok, StartingMsgSlot} =
             hb_ao:resolve(Msg2, #{ <<"path">> => <<"slot">> }, Opts),
@@ -729,16 +729,16 @@ push_as_identity_test_() ->
                 <<"path">> => <<"push">>,
                 <<"slot">> => StartingMsgSlot
             },
-        {ok, _} = hb_ao:resolve(Msg1, Msg3, Opts),
+        {ok, _} = hb_ao:resolve(Base, Msg3, Opts),
         ?assertEqual(
             {ok, <<"Done.">>},
-            hb_ao:resolve(Msg1, <<"now/results/data">>, Opts)
+            hb_ao:resolve(Base, <<"now/results/data">>, Opts)
         ),
         % Validate that the scheduler's wallet was used to sign the message.
         Committers =
             hb_ao:get(
                 <<"schedule/assignments/2/committers">>,
-                Msg1,
+                Base,
                 Opts
             ),
         ?assert(lists:member(SchedulingID, Committers)),
@@ -746,7 +746,7 @@ push_as_identity_test_() ->
         % Validate that the compute wallet was used to sign the message.
         ?assertEqual(
             [ComputeID],
-            hb_ao:get(<<"schedule/assignments/2/body/committers">>, Msg1, Opts)
+            hb_ao:get(<<"schedule/assignments/2/body/committers">>, Base, Opts)
         )
     end}.
 
@@ -966,20 +966,20 @@ nested_push_prompts_encoding_change() ->
         store => hb_opts:get(store)
     },
     ?event(push_debug, {opts, Opts}),
-    Msg1 = dev_process:test_aos_process(Opts),
-    hb_cache:write(Msg1, Opts),
+    Base = dev_process:test_aos_process(Opts),
+    hb_cache:write(Base, Opts),
     {ok, SchedInit} =
-        hb_ao:resolve(Msg1, #{
+        hb_ao:resolve(Base, #{
             <<"method">> => <<"POST">>,
             <<"path">> => <<"schedule">>,
-            <<"body">> => Msg1
+            <<"body">> => Base
         },
         Opts
     ),
-    ?event({test_setup, {msg1, Msg1}, {sched_init, SchedInit}}),
+    ?event({test_setup, {msg1, Base}, {sched_init, SchedInit}}),
     Script = message_to_legacynet_scheduler_script(),
     ?event({script, Script}),
-    {ok, Msg2} = dev_process:schedule_aos_call(Msg1, Script),
+    {ok, Msg2} = dev_process:schedule_aos_call(Base, Script),
     ?event(push, {msg_sched_result, Msg2}),
     {ok, StartingMsgSlot} =
         hb_ao:resolve(Msg2, #{ <<"path">> => <<"slot">> }, Opts),
@@ -989,7 +989,7 @@ nested_push_prompts_encoding_change() ->
             <<"path">> => <<"push">>,
             <<"slot">> => StartingMsgSlot
         },
-    {ok, Res} = hb_ao:resolve(Msg1, Msg3, Opts),
+    {ok, Res} = hb_ao:resolve(Base, Msg3, Opts),
     ?event(push, {res, Res}),
     Msg = hb_message:commit(#{
         <<"path">> => <<"push">>,
@@ -997,7 +997,7 @@ nested_push_prompts_encoding_change() ->
         <<"body">> =>
             hb_message:commit(
                 #{
-                    <<"target">> => hb_message:id(Msg1, all, Opts),
+                    <<"target">> => hb_message:id(Base, all, Opts),
                     <<"action">> => <<"Ping">>
                 },
                 Opts
@@ -1007,7 +1007,7 @@ nested_push_prompts_encoding_change() ->
     Res2 =
         hb_ao:resolve_many(
             [
-                hb_message:id(Msg1, all, Opts),
+                hb_message:id(Base, all, Opts),
                 {as, <<"process@1.0">>, <<>>},
                 Msg
             ],

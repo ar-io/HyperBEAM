@@ -10,37 +10,37 @@
 %% @doc Returns a group name for a request. The worker is responsible for all
 %% computation work on the same process on a single node, so we use the
 %% process ID as the group name.
-group(Msg1, undefined, Opts) ->
-    hb_persistent:default_grouper(Msg1, undefined, Opts);
-group(Msg1, Msg2, Opts) ->
+group(Base, undefined, Opts) ->
+    hb_persistent:default_grouper(Base, undefined, Opts);
+group(Base, Msg2, Opts) ->
     case hb_opts:get(process_workers, false, Opts) of
         false ->
-            hb_persistent:default_grouper(Msg1, Msg2, Opts);
+            hb_persistent:default_grouper(Base, Msg2, Opts);
         true ->
             case Msg2 of
                 undefined ->
-                    hb_persistent:default_grouper(Msg1, undefined, Opts);
+                    hb_persistent:default_grouper(Base, undefined, Opts);
                 _ ->
                     case hb_path:matches(<<"compute">>, hb_path:hd(Msg2, Opts)) of
                         true ->
-                            process_to_group_name(Msg1, Opts);
+                            process_to_group_name(Base, Opts);
                         _ ->
-                            hb_persistent:default_grouper(Msg1, Msg2, Opts)
+                            hb_persistent:default_grouper(Base, Msg2, Opts)
                     end
             end
     end.
 
-process_to_group_name(Msg1, Opts) ->
-    Initialized = dev_process:ensure_process_key(Msg1, Opts),
+process_to_group_name(Base, Opts) ->
+    Initialized = dev_process:ensure_process_key(Base, Opts),
     ProcMsg = hb_ao:get(<<"process">>, Initialized, Opts#{ hashpath => ignore }),
     ID = hb_message:id(ProcMsg, all),
-    ?event({process_to_group_name, {id, ID}, {msg1, Msg1}}),
+    ?event({process_to_group_name, {id, ID}, {msg1, Base}}),
     hb_util:human_id(ID).
 
 %% @doc Spawn a new worker process. This is called after the end of the first
 %% execution of `hb_ao:resolve/3', so the state we are given is the
 %% already current.
-server(GroupName, Msg1, Opts) ->
+server(GroupName, Base, Opts) ->
     ServerOpts = Opts#{
         await_inprogress => false,
         spawn_worker => false,
@@ -62,7 +62,7 @@ server(GroupName, Msg1, Opts) ->
             ),
             Res =
                 hb_ao:resolve(
-                    Msg1,
+                    Base,
                     #{ <<"path">> => <<"compute">>, <<"slot">> => TargetSlot },
                     hb_maps:merge(ListenerOpts, ServerOpts, Opts)
                 ),
@@ -72,30 +72,30 @@ server(GroupName, Msg1, Opts) ->
                 GroupName,
                 case Res of
                     {ok, Msg3} -> Msg3;
-                    _ -> Msg1
+                    _ -> Base
                 end,
                 Opts
             );
         stop ->
-            ?event(worker, {stopping, {group, GroupName}, {msg1, Msg1}}),
+            ?event(worker, {stopping, {group, GroupName}, {msg1, Base}}),
             exit(normal)
     after Timeout ->
         % We have hit the in-memory persistence timeout. Generate a snapshot
         % of the current process state and ensure it is cached.
         hb_ao:resolve(
-            Msg1,
+            Base,
             <<"snapshot">>,
             ServerOpts#{ <<"cache-control">> => [<<"store">>] }
         ),
         % Return the current process state.
-        {ok, Msg1}
+        {ok, Base}
     end.
 
 %% @doc Await a resolution from a worker executing the `process@1.0' device.
-await(Worker, GroupName, Msg1, Msg2, Opts) ->
+await(Worker, GroupName, Base, Msg2, Opts) ->
     case hb_path:matches(<<"compute">>, hb_path:hd(Msg2, Opts)) of
         false -> 
-            hb_persistent:default_await(Worker, GroupName, Msg1, Msg2, Opts);
+            hb_persistent:default_await(Worker, GroupName, Base, Msg2, Opts);
         true ->
             TargetSlot = hb_ao:get(<<"slot">>, Msg2, any, Opts),
             ?event({awaiting_compute, 
@@ -118,7 +118,7 @@ await(Worker, GroupName, Msg1, Msg2, Opts) ->
                         {worker, Worker},
                         {group, GroupName}
                     }),
-                    await(Worker, GroupName, Msg1, Msg2, Opts);
+                    await(Worker, GroupName, Base, Msg2, Opts);
                 {'DOWN', _R, process, Worker, _Reason} ->
                     ?event(compute_debug,
                         {leader_died,

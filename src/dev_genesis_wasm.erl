@@ -622,9 +622,9 @@ test_genesis_wasm_process() ->
         #{ priv_wallet => Wallet }
     ).
 
-schedule_test_message(Msg1, Text) ->
-    schedule_test_message(Msg1, Text, #{}).
-schedule_test_message(Msg1, Text, MsgBase) ->
+schedule_test_message(Base, Text) ->
+    schedule_test_message(Base, Text, #{}).
+schedule_test_message(Base, Text, MsgBase) ->
     Wallet = hb:wallet(),
     UncommittedBase = hb_message:uncommitted(MsgBase),
     Msg2 =
@@ -642,15 +642,15 @@ schedule_test_message(Msg1, Text, MsgBase) ->
             },
             #{ priv_wallet => Wallet }
         ),
-    hb_ao:resolve(Msg1, Msg2, #{}).
+    hb_ao:resolve(Base, Msg2, #{}).
 
-schedule_aos_call(Msg1, Code) ->
-    schedule_aos_call(Msg1, Code, <<"Eval">>, #{}).
-schedule_aos_call(Msg1, Code, Action) ->
-    schedule_aos_call(Msg1, Code, Action, #{}).
-schedule_aos_call(Msg1, Code, Action, Opts) ->
+schedule_aos_call(Base, Code) ->
+    schedule_aos_call(Base, Code, <<"Eval">>, #{}).
+schedule_aos_call(Base, Code, Action) ->
+    schedule_aos_call(Base, Code, Action, #{}).
+schedule_aos_call(Base, Code, Action, Opts) ->
     Wallet = hb_opts:get(priv_wallet, hb:wallet(), Opts),
-    ProcID = hb_message:id(Msg1, all),
+    ProcID = hb_message:id(Base, all),
     Msg2 =
         hb_message:commit(
             #{
@@ -661,7 +661,7 @@ schedule_aos_call(Msg1, Code, Action, Opts) ->
             },
             #{ priv_wallet => Wallet }
         ),
-    schedule_test_message(Msg1, <<"TEST MSG">>, Msg2).
+    schedule_test_message(Base, <<"TEST MSG">>, Msg2).
 
 spawn_and_execute_slot_test_() ->
     { timeout, 900, fun spawn_and_execute_slot/0 }.
@@ -672,22 +672,22 @@ spawn_and_execute_slot() ->
         cache_control => <<"always">>,
         store => hb_opts:get(store)
     },
-    Msg1 = test_genesis_wasm_process(),
-    hb_cache:write(Msg1, Opts),
+    Base = test_genesis_wasm_process(),
+    hb_cache:write(Base, Opts),
     {ok, _SchedInit} = 
         hb_ao:resolve(
-            Msg1,
+            Base,
             #{
                 <<"method">> => <<"POST">>,
                 <<"path">> => <<"schedule">>,
-                <<"body">> => Msg1
+                <<"body">> => Base
             },
             Opts
         ),
-    {ok, _} = schedule_aos_call(Msg1, <<"return 1+1">>),
-    {ok, _} = schedule_aos_call(Msg1, <<"return 2+2">>),
+    {ok, _} = schedule_aos_call(Base, <<"return 1+1">>),
+    {ok, _} = schedule_aos_call(Base, <<"return 2+2">>),
     {ok, SchedulerRes} =
-        hb_ao:resolve(Msg1, #{
+        hb_ao:resolve(Base, #{
             <<"method">> => <<"GET">>,
             <<"path">> => <<"schedule">>
         }, Opts),
@@ -705,7 +705,7 @@ spawn_and_execute_slot() ->
         <<"return 2+2">>,
         hb_ao:get(<<"assignments/2/body/data">>, SchedulerRes)
     ),
-    {ok, Result} = hb_ao:resolve(Msg1, #{ <<"path">> => <<"now">> }, Opts),
+    {ok, Result} = hb_ao:resolve(Base, #{ <<"path">> => <<"now">> }, Opts),
     ?assertEqual(<<"4">>, hb_ao:get(<<"results/data">>, Result)).
 
 compare_result_genesis_wasm_and_wasm_test_() ->

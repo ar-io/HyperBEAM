@@ -13,9 +13,9 @@
 %%% and the current message. This means that each message in the HashPath is
 %%% dependent on all previous messages.
 %%% <pre>
-%%%     Msg1.HashPath = Msg1.ID
-%%%     Msg3.HashPath = Msg1.Hash(Msg1.HashPath, Msg2.ID)
-%%%     Msg3.{...} = AO-Core.apply(Msg1, Msg2)
+%%%     Base.HashPath = Base.ID
+%%%     Msg3.HashPath = Base.Hash(Base.HashPath, Msg2.ID)
+%%%     Msg3.{...} = AO-Core.apply(Base, Msg2)
 %%%     ...
 %%% </pre>
 %%% 
@@ -26,8 +26,8 @@
 %%% 
 %%% A message may also specify its own algorithm for generating its HashPath,
 %%% which allows for custom logic to be used for representing the history of a
-%%% message. When Msg2's are applied to a Msg1, the resulting Msg3's HashPath
-%%% will be generated according to Msg1's algorithm choice.
+%%% message. When Msg2's are applied to a Base, the resulting Msg3's HashPath
+%%% will be generated according to Base's algorithm choice.
 -module(hb_path).
 -export([hashpath/2, hashpath/3, hashpath/4, hashpath_alg/2]).
 -export([hd/2, tl/2]).
@@ -100,8 +100,8 @@ hashpath(Bin, _Opts) when is_binary(Bin) ->
     % Default hashpath for a binary message is its SHA2-256 hash.
     hb_util:human_id(hb_crypto:sha256(Bin));
 hashpath(RawMsg1, Opts) ->
-    Msg1 = hb_ao:normalize_keys(RawMsg1, Opts),
-    case hb_private:from_message(Msg1) of
+    Base = hb_ao:normalize_keys(RawMsg1, Opts),
+    case hb_private:from_message(Base) of
         #{ <<"hashpath">> := HP } -> HP;
         _ ->
             % Note: We do not use `hb_message:id' here because it will call
@@ -110,7 +110,7 @@ hashpath(RawMsg1, Opts) ->
                 hb_util:human_id(
                     hb_util:ok(
                         dev_message:id(
-                            Msg1,
+                            Base,
                             #{ <<"commitments">> => <<"all">> },
                             Opts
                         )
@@ -120,7 +120,7 @@ hashpath(RawMsg1, Opts) ->
                 A:B:ST ->
                     throw(
                         {badarg,
-                            {unsupported_type, Msg1},
+                            {unsupported_type, Base},
                             {error, A},
                             {details, B},
                             {stacktrace, ST}
@@ -128,18 +128,18 @@ hashpath(RawMsg1, Opts) ->
                     )
             end
     end.
-hashpath(Msg1, Msg2, Opts) when is_map(Msg1) ->
-    Msg1Hashpath = hashpath(Msg1, Opts),
-    HashpathAlg = hashpath_alg(Msg1, Opts),
+hashpath(Base, Msg2, Opts) when is_map(Base) ->
+    Msg1Hashpath = hashpath(Base, Opts),
+    HashpathAlg = hashpath_alg(Base, Opts),
     hashpath(Msg1Hashpath, Msg2, HashpathAlg, Opts);
-hashpath(Msg1, Msg2, Opts) ->
-    throw({hashpath_not_viable, Msg1, Msg2, Opts}).
-hashpath(Msg1, Msg2, HashpathAlg, Opts) when is_map(Msg2) ->
+hashpath(Base, Msg2, Opts) ->
+    throw({hashpath_not_viable, Base, Msg2, Opts}).
+hashpath(Base, Msg2, HashpathAlg, Opts) when is_map(Msg2) ->
     Msg2WithoutMeta = hb_maps:without(?AO_CORE_KEYS, Msg2, Opts),
     ReqPath = from_message(request, Msg2, Opts),
     case {map_size(Msg2WithoutMeta), ReqPath} of
         {0, _} when ReqPath =/= undefined ->
-            hashpath(Msg1, to_binary(hd(ReqPath)), HashpathAlg, Opts);
+            hashpath(Base, to_binary(hd(ReqPath)), HashpathAlg, Opts);
         _ ->
             {ok, Msg2ID} =
                 dev_message:id(
@@ -147,7 +147,7 @@ hashpath(Msg1, Msg2, HashpathAlg, Opts) when is_map(Msg2) ->
                     #{ <<"commitments">> => <<"all">> },
                     Opts
                 ),
-            hashpath(Msg1, hb_util:human_id(Msg2ID), HashpathAlg, Opts)
+            hashpath(Base, hb_util:human_id(Msg2ID), HashpathAlg, Opts)
     end;
 hashpath(Msg1Hashpath, HumanMsg2ID, HashpathAlg, Opts) ->
     ?event({hashpath, {msg1hp, {explicit, Msg1Hashpath}}, {msg2id, {explicit, HumanMsg2ID}}}),
@@ -218,8 +218,8 @@ queue_request(Msg, Path, Opts) ->
 	
 %%% @doc Verify the HashPath of a message, given a list of messages that
 %%% represent its history.
-verify_hashpath([Msg1, Msg2, Msg3|Rest], Opts) ->
-    CorrectHashpath = hashpath(Msg1, Msg2, Opts),
+verify_hashpath([Base, Msg2, Msg3|Rest], Opts) ->
+    CorrectHashpath = hashpath(Base, Msg2, Opts),
     FromMsg3 = from_message(hashpath, Msg3, Opts),
     CorrectHashpath == FromMsg3 andalso
         case Rest of
@@ -330,34 +330,34 @@ normalize(Path) ->
 
 %%% TESTS
 hashpath_test() ->
-    Msg1 = #{ priv => #{<<"empty">> => <<"message">>} },
+    Base = #{ priv => #{<<"empty">> => <<"message">>} },
     Msg2 = #{ priv => #{<<"exciting">> => <<"message2">>} },
-    Hashpath = hashpath(Msg1, Msg2, #{}),
+    Hashpath = hashpath(Base, Msg2, #{}),
     ?assert(is_binary(Hashpath) andalso byte_size(Hashpath) == 87).
 
 hashpath_direct_msg2_test() ->
-    Msg1 = #{ <<"base">> => <<"message">> },
+    Base = #{ <<"base">> => <<"message">> },
     Msg2 = #{ <<"path">> => <<"base">> },
-    Hashpath = hashpath(Msg1, Msg2, #{}),
+    Hashpath = hashpath(Base, Msg2, #{}),
     [_, KeyName] = term_to_path_parts(Hashpath),
     ?assert(matches(KeyName, <<"base">>)).
 
 multiple_hashpaths_test() ->
-    Msg1 = #{ <<"empty">> => <<"message">> },
+    Base = #{ <<"empty">> => <<"message">> },
     Msg2 = #{ <<"exciting">> => <<"message2">> },
-    Msg3 = #{ priv => #{<<"hashpath">> => hashpath(Msg1, Msg2, #{}) } },
+    Msg3 = #{ priv => #{<<"hashpath">> => hashpath(Base, Msg2, #{}) } },
     Msg4 = #{ <<"exciting">> => <<"message4">> },
     Msg5 = hashpath(Msg3, Msg4, #{}),
     ?assert(is_binary(Msg5)).
 
 verify_hashpath_test() ->
-    Msg1 = #{ <<"test">> => <<"initial">> },
+    Base = #{ <<"test">> => <<"initial">> },
     Msg2 = #{ <<"firstapplied">> => <<"msg2">> },
-    Msg3 = #{ priv => #{<<"hashpath">> => hashpath(Msg1, Msg2, #{})} },
+    Msg3 = #{ priv => #{<<"hashpath">> => hashpath(Base, Msg2, #{})} },
     Msg4 = #{ priv => #{<<"hashpath">> => hashpath(Msg2, Msg3, #{})} },
     Msg3Fake = #{ priv => #{<<"hashpath">> => hashpath(Msg4, Msg2, #{})} },
-    ?assert(verify_hashpath([Msg1, Msg2, Msg3, Msg4], #{})),
-    ?assertNot(verify_hashpath([Msg1, Msg2, Msg3Fake, Msg4], #{})).
+    ?assert(verify_hashpath([Base, Msg2, Msg3, Msg4], #{})),
+    ?assertNot(verify_hashpath([Base, Msg2, Msg3Fake, Msg4], #{})).
 
 validate_path_transitions(X, Opts) ->
     {Head, X2} = pop_request(X, Opts),
@@ -406,14 +406,14 @@ term_to_path_parts_test() ->
     ?assertEqual([], term_to_path_parts(<<"/">>)).
 
 % calculate_multistage_hashpath_test() ->
-%     Msg1 = #{ <<"base">> => <<"message">> },
+%     Base = #{ <<"base">> => <<"message">> },
 %     Msg2 = #{ <<"path">> => <<"2">> },
 %     Msg3 = #{ <<"path">> => <<"3">> },
 %     Msg4 = #{ <<"path">> => <<"4">> },
-%     Msg5 = hashpath(Msg1, [Msg2, Msg3, Msg4], #{}),
+%     Msg5 = hashpath(Base, [Msg2, Msg3, Msg4], #{}),
 %     ?assert(is_binary(Msg5)),
 %     Msg3Path = <<"3">>,
-%     Msg5b = hashpath(Msg1, [Msg2, Msg3Path, Msg4]),
+%     Msg5b = hashpath(Base, [Msg2, Msg3Path, Msg4]),
 %     ?assertEqual(Msg5, Msg5b).
 
 regex_matches_test() ->

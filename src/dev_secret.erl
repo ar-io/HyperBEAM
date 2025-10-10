@@ -828,22 +828,22 @@ list_wallets_test() ->
         priv_wallet => ar_wallet:new()
     }),
     % Generate some wallets first.
-    {ok, Msg1} =
+    {ok, Base} =
         hb_http:get(
             Node,
             <<"/~secret@1.0/generate?persist=in-memory">>,
             #{}
         ),
-        ?event({msg1, Msg1}),
+        ?event({msg1, Base}),
     {ok, Msg2} =
         hb_http:get(
             Node,
             <<"/~secret@1.0/generate?persist=in-memory">>,
             #{}
         ),
-    WalletAddress1 = maps:get(<<"body">>, Msg1),
+    WalletAddress1 = maps:get(<<"body">>, Base),
     WalletAddress2 = maps:get(<<"body">>, Msg2),
-    ?assertEqual(WalletAddress1, maps:get(<<"body">>, Msg1)),
+    ?assertEqual(WalletAddress1, maps:get(<<"body">>, Base)),
     ?assertEqual(WalletAddress2, maps:get(<<"body">>, Msg2)),
     % List all wallets (no authentication required for listing).
     {ok, Wallets} = hb_http:get(Node, <<"/~secret@1.0/list">>, #{}),

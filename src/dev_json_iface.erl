@@ -467,7 +467,7 @@ generate_stack(File, _Mode, RawOpts) ->
     test_init(),
     Msg0 = dev_wasm:cache_wasm_image(File, Opts),
     Image = hb_ao:get(<<"image">>, Msg0, Opts),
-    Msg1 = Msg0#{
+    Base = Msg0#{
         <<"device">> => <<"stack@1.0">>,
         <<"device-stack">> =>
             [
@@ -488,7 +488,7 @@ generate_stack(File, _Mode, RawOpts) ->
                 <<"authority">> => hb:address()
             }, Opts)
     },
-    {ok, Msg2} = hb_ao:resolve(Msg1, <<"init">>, Opts),
+    {ok, Msg2} = hb_ao:resolve(Base, <<"init">>, Opts),
     Msg2.
 
 generate_aos_msg(ProcID, Code) ->

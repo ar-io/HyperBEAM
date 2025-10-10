@@ -513,7 +513,7 @@ binary_to_bignum(Bin) when ?IS_ID(Bin) ->
     Num.
 
 %% @doc Preprocess a request to check if it should be relayed to a different node.
-preprocess(Msg1, Msg2, Opts) ->
+preprocess(Base, Msg2, Opts) ->
     Req = hb_ao:get(<<"request">>, Msg2, Opts#{ hashpath => ignore }),
     ?event(debug_preprocess, {called_preprocess,Req}),
     TemplateRoutes = load_routes(Opts),
@@ -547,7 +547,7 @@ preprocess(Msg1, Msg2, Opts) ->
                 hb_util:atom(
                     hb_ao:get_first(
                         [
-                            {Msg1, <<"commit-request">>}
+                            {Base, <<"commit-request">>}
                         ],
                         false,
                         Opts

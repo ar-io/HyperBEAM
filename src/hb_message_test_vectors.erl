@@ -334,13 +334,13 @@ minimization_test() ->
     ?assertEqual(1, hb_maps:size(MinimizedMsg)).
 
 match_modes_test() ->
-    Msg1 = #{ <<"a">> => 1, <<"b">> => 2 },
+    Base = #{ <<"a">> => 1, <<"b">> => 2 },
     Msg2 = #{ <<"a">> => 1 },
     Msg3 = #{ <<"a">> => 1, <<"b">> => 2, <<"c">> => 3 },
-    ?assert(hb_message:match(Msg1, Msg2, only_present)),
-    ?assert(hb_message:match(Msg2, Msg1, strict) =/= true),
-    ?assert(hb_message:match(Msg1, Msg3, primary)),
-    ?assert(hb_message:match(Msg3, Msg1, primary) =/= true).
+    ?assert(hb_message:match(Base, Msg2, only_present)),
+    ?assert(hb_message:match(Msg2, Base, strict) =/= true),
+    ?assert(hb_message:match(Base, Msg3, primary)),
+    ?assert(hb_message:match(Msg3, Base, primary) =/= true).
 
 basic_message_codec_test(Codec, Opts) ->
     Msg = #{ <<"normal_key">> => <<"NORMAL_VALUE">> },
