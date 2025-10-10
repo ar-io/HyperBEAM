@@ -834,7 +834,7 @@ list_wallets_test() ->
             <<"/~secret@1.0/generate?persist=in-memory">>,
             #{}
         ),
-        ?event({msg1, Base}),
+        ?event({base, Base}),
     {ok, Req} =
         hb_http:get(
             Node,

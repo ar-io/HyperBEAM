@@ -71,7 +71,7 @@ parse_schedulers(SchedLoc) when is_binary(SchedLoc) ->
 
 %% @doc The default handler for the scheduler device.
 router(_, Base, Req, Opts) ->
-    ?event({scheduler_router_called, {msg2, Req}, {opts, Opts}}),
+    ?event({scheduler_router_called, {req, Req}, {opts, Opts}}),
     schedule(Base, Req, Opts).
 
 %% @doc Load the schedule for a process into the cache, then return the next
@@ -79,7 +79,7 @@ router(_, Base, Req, Opts) ->
 %% a `Current-Slot' key. It stores a local cache of the schedule in the
 %% `priv/To-Process' key.
 next(Base, Req, Opts) ->
-    ?event(debug_next, {scheduler_next_called, {msg1, Base}, {msg2, Req}}),
+    ?event(debug_next, {scheduler_next_called, {base, Base}, {req, Req}}),
     ?event(next, started_next),
     ?event(next_profiling, started_next),
     Schedule = message_cached_assignments(Base, Opts),
@@ -558,7 +558,7 @@ post_location(Base, RawReq, RawOpts) ->
 %% @doc A router for choosing between getting the existing schedule, or
 %% scheduling a new message.
 schedule(Base, Req, Opts) ->
-    ?event({resolving_schedule_request, {msg2, Req}, {state_msg, Base}}),
+    ?event({resolving_schedule_request, {req, Req}, {state_msg, Base}}),
     case hb_util:key_to_atom(hb_ao:get(<<"method">>, Req, <<"GET">>, Opts)) of
         post -> post_schedule(Base, Req, Opts);
         get -> get_schedule(Base, Req, Opts)
@@ -713,7 +713,7 @@ find_server(ProcID, Base, ToSched, Opts) ->
                 not_found ->
                     ?event({no_pid_in_local_registry, ProcID}),
                     Proc = find_process_message(ProcID, Base, ToSched, Opts),
-                    ?event({found_process, {process, Proc}, {msg1, Base}}),
+                    ?event({found_process, {process, Proc}, {base, Base}}),
                     SchedLoc =
                         hb_ao:get_first(
                             [
@@ -1529,7 +1529,7 @@ find_target_id(Base, Req, Opts) ->
                 end
             end
     end,
-    ?event({found_id, {id, Res}, {msg1, Base}, {msg2, Req}}),
+    ?event({found_id, {id, Res}, {base, Base}, {req, Req}}),
     Res.
 
 %% @doc Search the given base and request message pair to find the message to

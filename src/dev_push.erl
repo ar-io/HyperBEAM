@@ -654,7 +654,7 @@ full_push_test_() ->
             },
             Opts
         ),
-        ?event({test_setup, {msg1, Base}, {sched_init, SchedInit}}),
+        ?event({test_setup, {base, Base}, {sched_init, SchedInit}}),
         Script = ping_pong_script(2),
         ?event({script, Script}),
         {ok, Req} = dev_process:schedule_aos_call(Base, Script, Opts),
@@ -705,7 +705,7 @@ push_as_identity_test_() ->
                     scheduler => [SchedulingID, ComputeID]
                 }
             ),
-        ?event({msg1, Base}),
+        ?event({base, Base}),
         % Perform the remainder of the test as with `full_push_test_/0'.
         hb_cache:write(Base, Opts),
         {ok, SchedInit} =
@@ -716,7 +716,7 @@ push_as_identity_test_() ->
             },
             Opts
         ),
-        ?event({test_setup, {msg1, Base}, {sched_init, SchedInit}}),
+        ?event({test_setup, {base, Base}, {sched_init, SchedInit}}),
         Script = ping_pong_script(2),
         ?event({script, Script}),
         {ok, Req} = dev_process:schedule_aos_call(Base, Script),
@@ -918,7 +918,7 @@ push_prompts_encoding_change() ->
         <<"action">> => <<"Eval">>,
         <<"data">> => <<"print(\"Please ignore!\")">>
     }, Opts),
-    ?event(push, {msg1, Msg}),
+    ?event(push, {base, Msg}),
     Res =
         hb_ao:resolve_many(
             [
@@ -976,7 +976,7 @@ nested_push_prompts_encoding_change() ->
         },
         Opts
     ),
-    ?event({test_setup, {msg1, Base}, {sched_init, SchedInit}}),
+    ?event({test_setup, {base, Base}, {sched_init, SchedInit}}),
     Script = message_to_legacynet_scheduler_script(),
     ?event({script, Script}),
     {ok, Req} = dev_process:schedule_aos_call(Base, Script),
@@ -1003,7 +1003,7 @@ nested_push_prompts_encoding_change() ->
                 Opts
             )
     }, Opts),
-    ?event(push, {msg1, Msg}),
+    ?event(push, {base, Msg}),
     Res2 =
         hb_ao:resolve_many(
             [

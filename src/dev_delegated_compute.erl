@@ -57,7 +57,7 @@ compute(Base, Req, Opts) ->
     % If request is an assignment, we will compute the result
     % Otherwise, it is a dryrun
     Type = hb_ao:get(<<"type">>, Req, not_found, Opts),
-    ?event({doing_delegated_compute, {msg2, Req}, {type, Type}}),
+    ?event({doing_delegated_compute, {req, Req}, {type, Type}}),
     % Execute the compute via external CU
     {Slot, Res} =
         case Type of

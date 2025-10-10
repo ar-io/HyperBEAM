@@ -132,7 +132,7 @@ output_prefix(Base, _Req, Opts) ->
 %% except for `set/2' which is handled by the default implementation in
 %% `dev_message'.
 router(<<"keys">>, Message1, Message2, Opts) ->
-	?event({keys_called, {msg1, Message1}, {msg2, Message2}}),
+	?event({keys_called, {base, Message1}, {req, Message2}}),
 	dev_message:keys(Message1, Opts);
 router(Key, Message1, Message2, Opts) ->
     case hb_path:matches(Key, <<"transform">>) of
@@ -140,7 +140,7 @@ router(Key, Message1, Message2, Opts) ->
         false -> router(Message1, Message2, Opts)
     end.
 router(Message1, Message2, Opts) ->
-	?event({router_called, {msg1, Message1}, {msg2, Message2}}),
+	?event({router_called, {base, Message1}, {req, Message2}}),
     Mode =
         case hb_ao:get(<<"mode">>, Message2, not_found, Opts) of
             not_found ->
@@ -194,7 +194,7 @@ transformer_message(Base, Opts) ->
 %% of the message as it delegates execution to devices contained within it.
 transform(Base, Key, Opts) ->
 	% Get the device stack message from Base.
-    ?event({transforming_stack, {key, Key}, {msg1, Base}, {opts, Opts}}),
+    ?event({transforming_stack, {key, Key}, {base, Base}, {opts, Opts}}),
 	case hb_ao:get(<<"device-stack">>, {as, dev_message, Base}, Opts) of
         not_found -> throw({error, no_valid_device_stack});
         StackMsg ->
@@ -300,7 +300,7 @@ resolve_fold(Message1, Message2, Opts) ->
 resolve_fold(Message1, Message2, DevNum, Opts) ->
 	case transform(Message1, DevNum, Opts) of
 		{ok, Message3} ->
-			?event({stack_execute, DevNum, {msg1, Message3}, {msg2, Message2}}),
+			?event({stack_execute, DevNum, {base, Message3}, {req, Message2}}),
 			case hb_ao:resolve(Message3, Message2, Opts) of
 				{ok, Message4} when is_map(Message4) ->
 					?event({result, ok, DevNum, Message4}),
@@ -344,7 +344,7 @@ resolve_fold(Message1, Message2, DevNum, Opts) ->
 %% message of keys and values, where keys are the same as the keys in the
 %% original message (typically a number).
 resolve_map(Message1, Message2, Opts) ->
-    ?event({resolving_map, {msg1, Message1}, {msg2, Message2}}),
+    ?event({resolving_map, {base, Message1}, {req, Message2}}),
     DevKeys =
         hb_ao:get(
             <<"device-stack">>,
@@ -383,8 +383,8 @@ maybe_error(Message1, Message2, DevNum, Info, Opts) ->
                 error,
                 {device_failed,
                     {dev_num, DevNum},
-                    {msg1, Message1},
-                    {msg2, Message2},
+                    {base, Message1},
+                    {req, Message2},
                     {info, Info}
                 },
                 []
@@ -431,7 +431,7 @@ transform_internal_call_device_test() ->
 	).
 
 %% @doc Ensure we can generate a transformer message that can be called to
-%% return a version of msg1 with only that device attached.
+%% return a version of base with only that device attached.
 transform_external_call_device_test() ->
 	Base = #{
 		<<"device">> => <<"stack@1.0">>,

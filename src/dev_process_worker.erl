@@ -34,7 +34,7 @@ process_to_group_name(Base, Opts) ->
     Initialized = dev_process:ensure_process_key(Base, Opts),
     ProcMsg = hb_ao:get(<<"process">>, Initialized, Opts#{ hashpath => ignore }),
     ID = hb_message:id(ProcMsg, all),
-    ?event({process_to_group_name, {id, ID}, {msg1, Base}}),
+    ?event({process_to_group_name, {id, ID}, {base, Base}}),
     hb_util:human_id(ID).
 
 %% @doc Spawn a new worker process. This is called after the end of the first
@@ -77,7 +77,7 @@ server(GroupName, Base, Opts) ->
                 Opts
             );
         stop ->
-            ?event(worker, {stopping, {group, GroupName}, {msg1, Base}}),
+            ?event(worker, {stopping, {group, GroupName}, {base, Base}}),
             exit(normal)
     after Timeout ->
         % We have hit the in-memory persistence timeout. Generate a snapshot

@@ -152,7 +152,7 @@ schedule(Base, Req, Opts) ->
     run_as(<<"scheduler">>, Base, Req, Opts).
 
 slot(Base, Req, Opts) ->
-    ?event({slot_called, {msg1, Base}, {msg2, Req}}),
+    ?event({slot_called, {base, Base}, {req, Req}}),
     run_as(<<"scheduler">>, Base, Req, Opts).
 
 next(Base, _Req, Opts) ->
@@ -201,7 +201,7 @@ process_id(Base, Req, Opts) ->
 %% `Initialized' key to `True' to indicate that the process has been
 %% initialized.
 init(Base, Req, Opts) ->
-    ?event({init_called, {msg1, Base}, {msg2, Req}}),
+    ?event({init_called, {base, Base}, {req, Req}}),
     {ok, Initialized} =
         run_as(<<"execution">>, Base, #{ <<"path">> => init }, Opts),
     {
@@ -593,7 +593,7 @@ ensure_loaded(Base, Req, Opts) ->
     % Get the nonce we are currently on and the inbound nonce.
     TargetSlot = hb_ao:get(<<"slot">>, Req, undefined, Opts),
     ProcID = process_id(Base, #{}, Opts),
-    ?event({ensure_loaded, {msg1, Base}, {msg2, Req}}),
+    ?event({ensure_loaded, {base, Base}, {req, Req}}),
     case hb_ao:get(<<"initialized">>, Base, Opts) of
         <<"true">> ->
             ?event(already_initialized),
@@ -759,7 +759,7 @@ ensure_process_key(Base, Opts) ->
             ProcessMsg =
                 case hb_message:signers(Base, Opts) of
                     [] ->
-                        ?event({process_key_not_found_no_signers, {msg1, Base}}),
+                        ?event({process_key_not_found_no_signers, {base, Base}}),
                         case hb_cache:read(hb_message:id(Base, all, Opts), Opts) of
                             {ok, Proc} -> Proc;
                             not_found ->
@@ -771,7 +771,7 @@ ensure_process_key(Base, Opts) ->
                         ?event(
                             {process_key_not_found_but_signers_present,
                                 {signers, Signers},
-                                {msg1, Base}
+                                {base, Base}
                             }
                         ),
                         Base
@@ -779,7 +779,7 @@ ensure_process_key(Base, Opts) ->
             {ok, Committed} = hb_message:with_only_committed(ProcessMsg, Opts),
             ?event(
                 {process_key_before_set,
-                    {msg1, Base},
+                    {base, Base},
                     {process_msg, {explicit, ProcessMsg}},
                     {committed, Committed}
                 }
@@ -790,7 +790,7 @@ ensure_process_key(Base, Opts) ->
                     #{ <<"process">> => Committed },
                     Opts#{ hashpath => ignore }
                 ),
-            ?event({set_process_key_res, {msg1, Base}, {process_msg, ProcessMsg}, {res, Res}}),
+            ?event({set_process_key_res, {base, Base}, {process_msg, ProcessMsg}, {res, Res}}),
             Res;
         _ -> Base
     end.

@@ -365,7 +365,7 @@ default_worker(GroupName, Base, Opts) ->
 
 %% @doc Create a group name from a Base and Req pair as a tuple.
 default_grouper(Base, Req, Opts) ->
-    %?event({calculating_default_group_name, {msg1, Base}, {msg2, Req}}),
+    %?event({calculating_default_group_name, {base, Base}, {req, Req}}),
     % Use Erlang's `phash2' to hash the result of the Grouper function.
     % `phash2' is relatively fast and ensures that the group name is short for
     % storage in `pg'. In production we should only use a hash with a larger
@@ -387,7 +387,7 @@ default_grouper(Base, Req, Opts) ->
 %% we assume that the group name expresses enough information to identify the
 %% request.
 worker_event(Group, Data, Base, Req, Opts) when is_integer(Group) ->
-    ?event(worker, {worker_event, Group, Data, {msg1, Base}, {msg2, Req}}, Opts);
+    ?event(worker, {worker_event, Group, Data, {base, Base}, {req, Req}}, Opts);
 worker_event(Group, Data, _, _, Opts) ->
     ?event(worker, {worker_event, Group, Data}, Opts).
 

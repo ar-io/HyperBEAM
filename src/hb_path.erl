@@ -352,7 +352,7 @@ multiple_hashpaths_test() ->
 
 verify_hashpath_test() ->
     Base = #{ <<"test">> => <<"initial">> },
-    Req = #{ <<"firstapplied">> => <<"msg2">> },
+    Req = #{ <<"firstapplied">> => <<"req">> },
     Msg3 = #{ priv => #{<<"hashpath">> => hashpath(Base, Req, #{})} },
     Msg4 = #{ priv => #{<<"hashpath">> => hashpath(Req, Msg3, #{})} },
     Msg3Fake = #{ priv => #{<<"hashpath">> => hashpath(Msg4, Req, #{})} },

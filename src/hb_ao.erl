@@ -200,7 +200,7 @@ do_resolve_many([Msg3], Opts) ->
     ?event(ao_core, {stage, 11, resolve_complete, Msg3}),
     hb_cache:ensure_loaded(maybe_force_message(Msg3, Opts), Opts);
 do_resolve_many([Base, Req | MsgList], Opts) ->
-    ?event(ao_core, {stage, 0, resolve_many, {msg1, Base}, {msg2, Req}}),
+    ?event(ao_core, {stage, 0, resolve_many, {base, Base}, {req, Req}}),
     case resolve_stage(1, Base, Req, Opts) of
         {ok, Msg3} ->
             ?event(ao_core,
@@ -257,18 +257,18 @@ resolve_stage(1, Raw = {as, DevID, SubReq}, Req, Opts) ->
     % As this is the first message, we will then continue to execute the request
     % on the result.
     ?event(ao_core, {stage, 1, subresolving_base, {dev, DevID}, {subreq, SubReq}}, Opts),
-    ?event(subresolution, {as, {dev, DevID}, {subreq, SubReq}, {msg2, Req}}),
+    ?event(subresolution, {as, {dev, DevID}, {subreq, SubReq}, {req, Req}}),
     case subresolve(SubReq, DevID, SubReq, Opts) of
         {ok, SubRes} ->
             % The subresolution has returned a new message. Continue with it.
             ?event(subresolution,
-                {continuing_with_subresolved_message, {msg1, SubRes}}
+                {continuing_with_subresolved_message, {base, SubRes}}
             ),
             resolve_stage(1, SubRes, Req, Opts);
         OtherRes ->
             % The subresolution has returned an error. Return it.
             ?event(subresolution,
-                {subresolution_error, {msg1, Raw}, {res, OtherRes}}
+                {subresolution_error, {base, Raw}, {res, OtherRes}}
             ),
             OtherRes
     end;
@@ -289,7 +289,7 @@ resolve_stage(1, RawMsg1, Msg2Outer = #{ <<"path">> := {as, DevID, Msg2Inner} },
     ?event(subresolution,
         {subresolving_request_before_execution,
             {dev, DevID},
-            {msg2, Req}
+            {req, Req}
         }
     ),
     subresolve(RawMsg1, DevID, Req, Opts);
@@ -328,7 +328,7 @@ resolve_stage(1, Base, {resolve, Subres}, Opts) ->
         {ok, Req} ->
             ?event(
                 ao_core,
-                {stage, 1, request_subresolve_success, {msg2, Req}},
+                {stage, 1, request_subresolve_success, {req, Req}},
                 Opts
             ),
             resolve_stage(1, Base, Req, Opts);
@@ -415,8 +415,8 @@ resolve_stage(4, Base, Req, Opts) ->
                         ao_core,
                         {leader_died_during_wait,
                             {leader, Leader},
-                            {msg1, Base},
-                            {msg2, Req},
+                            {base, Base},
+                            {req, Req},
                             {opts, Opts}
                         },
                         Opts
@@ -436,8 +436,8 @@ resolve_stage(4, Base, Req, Opts) ->
                 ao_core,
                 {infinite_recursion,
                     {exec_group, GroupName},
-                    {msg1, Base},
-                    {msg2, Req},
+                    {base, Base},
+                    {req, Req},
                     {opts, Opts}
                 },
                 Opts
@@ -464,8 +464,8 @@ resolve_stage(5, Base, Req, ExecName, Opts) ->
                 {
                     resolving_key,
                     {key, Key},
-                    {msg1, Base},
-                    {msg2, Req},
+                    {base, Base},
+                    {req, Req},
                     {opts, Opts}
                 }
             ),
@@ -474,8 +474,8 @@ resolve_stage(5, Base, Req, ExecName, Opts) ->
 				{found_func_for_exec,
                     {key, Key},
 					{func, Func},
-					{msg1, Base},
-					{msg2, Req},
+					{base, Base},
+					{req, Req},
 					{opts, Opts}
 				}
 			),
@@ -497,8 +497,8 @@ resolve_stage(5, Base, Req, ExecName, Opts) ->
                     ao_result,
                     {
                         load_device_failed,
-                        {msg1, Base},
-                        {msg2, Req},
+                        {base, Base},
+                        {req, Req},
                         {exec_name, ExecName},
                         {exec_class, Class},
                         {exec_exception, Exception},
@@ -536,8 +536,8 @@ resolve_stage(6, Func, Base, Req, ExecName, Opts) ->
                 {
                     ao_result,
                     {exec_name, ExecName},
-                    {msg1, Base},
-                    {msg2, Req},
+                    {base, Base},
+                    {req, Req},
                     {msg3, MsgRes}
                 },
                 Opts
@@ -554,8 +554,8 @@ resolve_stage(6, Func, Base, Req, ExecName, Opts) ->
                     ao_result,
                     {
                         exec_failed,
-                        {msg1, Base},
-                        {msg2, Req},
+                        {base, Base},
+                        {req, Req},
                         {exec_name, ExecName},
                         {func, Func},
                         {exec_class, ExecClass},
@@ -644,7 +644,7 @@ resolve_stage(9, Base, Req, {ok, Msg3}, ExecName, Opts) when is_map(Msg3) ->
     );
 resolve_stage(9, Base, Req, {Status, Msg3}, ExecName, Opts) when is_map(Msg3) ->
     ?event(ao_core, {stage, 9, ExecName, abnormal_status_reset_hashpath}, Opts),
-    ?event(hashpath, {resetting_hashpath_msg3, {msg1, Base}, {msg2, Req}, {opts, Opts}}),
+    ?event(hashpath, {resetting_hashpath_msg3, {base, Base}, {req, Req}, {opts, Opts}}),
     % Skip cryptographic linking and reset the hashpath if the result is abnormal.
     Priv = hb_private:from_message(Msg3),
     resolve_stage(
@@ -839,8 +839,8 @@ error_infinite(Base, Req, Opts) ->
     ?event(
         ao_core,
         {error, {type, infinite_recursion},
-            {msg1, Base},
-            {msg2, Req},
+            {base, Base},
+            {req, Req},
             {opts, Opts}
         },
         Opts
@@ -987,7 +987,7 @@ set(RawMsg1, RawMsg2, Opts) when is_map(RawMsg2) ->
             normalize_keys(RawMsg2, Opts),
             Opts
         ),
-    ?event(ao_internal, {set_called, {msg1, Base}, {msg2, Req}}, Opts),
+    ?event(ao_internal, {set_called, {base, Base}, {req, Req}}, Opts),
     % Get the next key to set. 
     case keys(Req, internal_opts(Opts)) of
         [] -> Base;
@@ -999,7 +999,7 @@ set(RawMsg1, RawMsg2, Opts) when is_map(RawMsg2) ->
                     not_found -> hb_maps:get(Key, Req, undefined, Opts);
                     Body -> Body
                 end,
-            ?event({got_val_to_set, {key, Key}, {val, Val}, {msg2, Req}}),
+            ?event({got_val_to_set, {key, Key}, {val, Val}, {req, Req}}),
             % Next, set the key and recurse, removing the key from the Req.
             set(
                 set(Base, Key, Val, internal_opts(Opts)),
@@ -1014,7 +1014,7 @@ set(Base, Key, Value, Opts) ->
     Path = hb_path:term_to_path_parts(Key, Opts),
     % ?event(
     %     {setting_individual_key,
-    %         {msg1, Base},
+    %         {base, Base},
     %         {key, Key},
     %         {path, Path},
     %         {value, Value}

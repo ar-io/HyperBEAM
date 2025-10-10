@@ -24,7 +24,7 @@
 maybe_store(Base, Req, Msg3, Opts) ->
     case derive_cache_settings([Msg3, Req], Opts) of
         #{ <<"store">> := true } ->
-            ?event(caching, {caching_result, {msg1, Base}, {msg2, Req}, {msg3, Msg3}}),
+            ?event(caching, {caching_result, {base, Base}, {req, Req}, {msg3, Msg3}}),
             dispatch_cache_write(Base, Req, Msg3, Opts);
         _ -> 
             not_caching
@@ -62,8 +62,8 @@ lookup(Base, Req, Opts) ->
                 {hit, {ok, Res}} ->
                     ?event(caching,
                         {cache_hit,
-                            {msg1, Base},
-                            {msg2, Req},
+                            {base, Base},
+                            {req, Req},
                             {msg3, Res}
                         }
                     ),
@@ -153,7 +153,7 @@ perform_cache_write(Base, Req, Msg3, Opts) ->
 only_if_cached_not_found_error(Base, Req, Opts) ->
     ?event(
         caching,
-        {only_if_cached_execution_failed, {msg1, Base}, {msg2, Req}},
+        {only_if_cached_execution_failed, {base, Base}, {req, Req}},
         Opts
     ),
     {error,
@@ -170,7 +170,7 @@ only_if_cached_not_found_error(Base, Req, Opts) ->
 necessary_messages_not_found_error(Base, Req, Opts) ->
     ?event(
         load_message,
-        {necessary_messages_not_found, {msg1, Base}, {msg2, Req}},
+        {necessary_messages_not_found, {base, Base}, {req, Req}},
         Opts
     ),
     {error,

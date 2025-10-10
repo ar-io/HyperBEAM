@@ -344,7 +344,7 @@ normalize(Base, _Req, RawOpts) ->
                 end,
             ?event(snapshot,
                 {attempting_to_restore_lua_state,
-                    {msg1, Base}, {device_key, DeviceKey}
+                    {base, Base}, {device_key, DeviceKey}
                 }
             ),
             SerializedState =

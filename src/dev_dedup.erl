@@ -36,7 +36,7 @@ handle(<<"keys">>, M1, _M2, _Opts) ->
 handle(<<"set">>, M1, M2, Opts) ->
     dev_message:set(M1, M2, Opts);
 handle(Key, M1, M2, Opts) ->
-    ?event({dedup_handle, {key, Key}, {msg1, M1}, {msg2, M2}}),
+    ?event({dedup_handle, {key, Key}, {base, M1}, {req, M2}}),
     % Find the relevant parameters from the messages. We search for the
     % `dedup-key' key in the first message, and use that value as the key to
     % look for in the second message.
@@ -71,8 +71,8 @@ handle(Key, M1, M2, Opts) ->
     DedupList = hb_ao:get(<<"dedup">>, {as, <<"message@1.0">>, M1}, [], Opts),
     ?event({dedup_handle,
         {key, Key},
-        {msg1, M1},
-        {msg2, M2},
+        {base, M1},
+        {req, M2},
         {subject_key, SubjectKey},
         {subject, Subject}
     }),

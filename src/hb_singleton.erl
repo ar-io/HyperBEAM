@@ -854,9 +854,9 @@ path_parts_test() ->
     ?assertEqual(
         [
             <<"IYkkrqlZNW_J-4T-5eFApZOMRl5P4VjvrcOXWvIqB1Q">>,
-            <<"msg2">>
+            <<"req">>
         ],
-        path_parts($/, <<"/IYkkrqlZNW_J-4T-5eFApZOMRl5P4VjvrcOXWvIqB1Q/msg2">>)
+        path_parts($/, <<"/IYkkrqlZNW_J-4T-5eFApZOMRl5P4VjvrcOXWvIqB1Q/req">>)
     ),
     ?assertEqual(
         [<<"a">>, <<"b&K1=V1">>, <<"c&K2=V2">>],

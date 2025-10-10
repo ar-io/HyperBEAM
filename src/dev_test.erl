@@ -69,7 +69,7 @@ test_func(_) ->
 compute(Base, Req, Opts) ->
     AssignmentSlot = hb_ao:get(<<"slot">>, Req, Opts),
     Seen = hb_ao:get(<<"already-seen">>, Base, Opts),
-    ?event({compute_called, {msg1, Base}, {msg2, Req}, {opts, Opts}}),
+    ?event({compute_called, {base, Base}, {req, Req}, {opts, Opts}}),
     {ok,
         hb_ao:set(
             Base,
@@ -118,7 +118,7 @@ mul(Base, Req) ->
 
 %% @doc Do nothing when asked to snapshot.
 snapshot(Base, Req, _Opts) ->
-    ?event({snapshot_called, {msg1, Base}, {msg2, Req}}),
+    ?event({snapshot_called, {base, Base}, {req, Req}}),
     {ok, #{}}.
 
 %% @doc Set the `postprocessor-called' key to true in the HTTP server.

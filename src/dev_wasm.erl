@@ -70,7 +70,7 @@ init(M1, M2, Opts) ->
                                     InPrefix/binary,
                                     "/image."
                                 >>,
-                                {msg1, M1}
+                                {base, M1}
                             }
                         );
                     Bin when is_binary(Bin) -> Bin
@@ -248,7 +248,7 @@ normalize(RawM1, M2, Opts) ->
                     end,
                 ?event(
                     {no_instance_attempting_to_get_snapshot,
-                        {msg1, RawM1}, {device_key, DeviceKey}
+                        {base, RawM1}, {device_key, DeviceKey}
                     }
                 ),
                 Memory = 
@@ -347,7 +347,7 @@ import(Base, Req, Opts) ->
 %% @doc Log the call to the standard library as an event, and write the
 %% call details into the message.
 undefined_import_stub(Base, Req, Opts) ->
-    ?event({unimplemented_dev_wasm_call, {msg1, Base}, {msg2, Req}}),
+    ?event({unimplemented_dev_wasm_call, {base, Base}, {req, Req}}),
     Prefix = dev_stack:prefix(Base, Req, Opts),
     UndefinedCallsPath =
         <<"state/results/", Prefix/binary, "/undefined-calls">>,

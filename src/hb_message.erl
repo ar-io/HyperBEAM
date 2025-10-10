@@ -487,8 +487,8 @@ unsafe_match(Map1, Map2, Mode, Path, Opts) ->
             {keys2, Keys2},
             {mode, Mode},
             {primary_keys_present, PrimaryKeysPresent},
-            {msg1, Map1},
-            {msg2, Map2}
+            {base, Map1},
+            {req, Map2}
         }
     ),
     case (Keys1 == Keys2) or (Mode == only_present) or PrimaryKeysPresent of
