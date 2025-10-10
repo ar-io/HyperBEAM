@@ -164,12 +164,19 @@ execute_handler(HookName, Handler, Req, Opts) ->
         % committed before execution.
         BaseReq =
             Req#{
-                <<"path">> => hb_maps:get(<<"path">>, Handler, HookName, Opts),
-                <<"method">> => hb_maps:get(<<"method">>, Handler, <<"GET">>, Opts)
+                <<"path">> =>
+                    hb_maps:get(<<"path">>, Handler, HookName, Opts),
+                <<"method">> =>
+                    hb_maps:get(<<"method">>, Handler, <<"GET">>, Opts)
             },
         CommitReqBin = 
             hb_util:bin(
-                hb_maps:get(<<"hook/commit-request">>, Handler, <<"false">>, Opts)
+                hb_util:deep_get(
+                    <<"hook/commit-request">>,
+                    Handler,
+                    <<"false">>,
+                    Opts
+                )
             ),
         {PreparedBase, PreparedReq} =
             case CommitReqBin of
