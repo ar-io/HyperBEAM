@@ -58,9 +58,8 @@ once(_Msg1, Msg2, Opts) ->
 once_worker(Path, Req, Opts) ->
 	% Directly call the meta device on the newly constructed 'singleton', just
     % as hb_http_server does.
-    TracePID = hb_tracer:start_trace(),
 	try
-		dev_meta:handle(Opts#{ trace => TracePID }, Req#{ <<"path">> => Path})
+		dev_meta:handle(Opts, Req#{ <<"path">> => Path})
 	catch
 		Class:Reason:Stacktrace ->
 			?event(
@@ -102,14 +101,13 @@ every(_Base, Req, Opts) ->
                         Req,
                         Opts
                     ),
-				TracePID = hb_tracer:start_trace(),
 				Pid =
                     spawn(
                         fun() ->
                             every_worker_loop(
                                 CronPath,
                                 ModifiedMsg2,
-                                Opts#{ trace => TracePID },
+                                Opts,
                                 IntervalMillis
                             )
                         end
