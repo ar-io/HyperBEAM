@@ -835,16 +835,16 @@ list_wallets_test() ->
             #{}
         ),
         ?event({msg1, Base}),
-    {ok, Msg2} =
+    {ok, Req} =
         hb_http:get(
             Node,
             <<"/~secret@1.0/generate?persist=in-memory">>,
             #{}
         ),
     WalletAddress1 = maps:get(<<"body">>, Base),
-    WalletAddress2 = maps:get(<<"body">>, Msg2),
+    WalletAddress2 = maps:get(<<"body">>, Req),
     ?assertEqual(WalletAddress1, maps:get(<<"body">>, Base)),
-    ?assertEqual(WalletAddress2, maps:get(<<"body">>, Msg2)),
+    ?assertEqual(WalletAddress2, maps:get(<<"body">>, Req)),
     % List all wallets (no authentication required for listing).
     {ok, Wallets} = hb_http:get(Node, <<"/~secret@1.0/list">>, #{}),
     % Each wallet entry should be a wallet name.

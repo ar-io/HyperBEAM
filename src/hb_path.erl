@@ -14,19 +14,19 @@
 %%% dependent on all previous messages.
 %%% <pre>
 %%%     Base.HashPath = Base.ID
-%%%     Msg3.HashPath = Base.Hash(Base.HashPath, Msg2.ID)
-%%%     Msg3.{...} = AO-Core.apply(Base, Msg2)
+%%%     Msg3.HashPath = Base.Hash(Base.HashPath, Req.ID)
+%%%     Msg3.{...} = AO-Core.apply(Base, Req)
 %%%     ...
 %%% </pre>
 %%% 
 %%% A message's ID itself includes its HashPath, leading to the mixing of
-%%% a Msg2's merkle list into the resulting Msg3's HashPath. This allows a single
+%%% a Req's merkle list into the resulting Msg3's HashPath. This allows a single
 %%% message to represent a history _tree_ of all of the messages that were
 %%% applied to generate it -- rather than just a linear history.
 %%% 
 %%% A message may also specify its own algorithm for generating its HashPath,
 %%% which allows for custom logic to be used for representing the history of a
-%%% message. When Msg2's are applied to a Base, the resulting Msg3's HashPath
+%%% message. When Req's are applied to a Base, the resulting Msg3's HashPath
 %%% will be generated according to Base's algorithm choice.
 -module(hb_path).
 -export([hashpath/2, hashpath/3, hashpath/4, hashpath_alg/2]).
@@ -44,9 +44,9 @@
 %% @doc Extract the first key from a `Message2''s `Path' field.
 %% Note: This function uses the `dev_message:get/2' function, rather than 
 %% a generic call as the path should always be an explicit key in the message.
-hd(Msg2, Opts) ->
-    %?event({key_from_path, Msg2, Opts}),
-    case pop_request(Msg2, Opts) of
+hd(Req, Opts) ->
+    %?event({key_from_path, Req, Opts}),
+    case pop_request(Req, Opts) of
         undefined -> undefined;
         {Head, _} ->
             % `term_to_path' returns the full path, so we need to take the
@@ -59,8 +59,8 @@ hd(Msg2, Opts) ->
 %% transformation. Subsequently, the message's IDs will not be verifiable 
 %% after executing this transformation.
 %% This may or may not be the mainnet behavior we want.
-tl(Msg2, Opts) when is_map(Msg2) ->
-    case pop_request(Msg2, Opts) of
+tl(Req, Opts) when is_map(Req) ->
+    case pop_request(Req, Opts) of
         undefined -> undefined;
         {_, Rest} -> Rest
     end;
@@ -95,7 +95,7 @@ priv_store_remaining(Msg, RemainingPath, Opts) ->
             }
     }.
 
-%%% @doc Add an ID of a Msg2 to the HashPath of another message.
+%%% @doc Add an ID of a Req to the HashPath of another message.
 hashpath(Bin, _Opts) when is_binary(Bin) ->
     % Default hashpath for a binary message is its SHA2-256 hash.
     hb_util:human_id(hb_crypto:sha256(Bin));
@@ -128,22 +128,22 @@ hashpath(RawMsg1, Opts) ->
                     )
             end
     end.
-hashpath(Base, Msg2, Opts) when is_map(Base) ->
+hashpath(Base, Req, Opts) when is_map(Base) ->
     Msg1Hashpath = hashpath(Base, Opts),
     HashpathAlg = hashpath_alg(Base, Opts),
-    hashpath(Msg1Hashpath, Msg2, HashpathAlg, Opts);
-hashpath(Base, Msg2, Opts) ->
-    throw({hashpath_not_viable, Base, Msg2, Opts}).
-hashpath(Base, Msg2, HashpathAlg, Opts) when is_map(Msg2) ->
-    Msg2WithoutMeta = hb_maps:without(?AO_CORE_KEYS, Msg2, Opts),
-    ReqPath = from_message(request, Msg2, Opts),
+    hashpath(Msg1Hashpath, Req, HashpathAlg, Opts);
+hashpath(Base, Req, Opts) ->
+    throw({hashpath_not_viable, Base, Req, Opts}).
+hashpath(Base, Req, HashpathAlg, Opts) when is_map(Req) ->
+    Msg2WithoutMeta = hb_maps:without(?AO_CORE_KEYS, Req, Opts),
+    ReqPath = from_message(request, Req, Opts),
     case {map_size(Msg2WithoutMeta), ReqPath} of
         {0, _} when ReqPath =/= undefined ->
             hashpath(Base, to_binary(hd(ReqPath)), HashpathAlg, Opts);
         _ ->
             {ok, Msg2ID} =
                 dev_message:id(
-                    Msg2,
+                    Req,
                     #{ <<"commitments">> => <<"all">> },
                     Opts
                 ),
@@ -218,13 +218,13 @@ queue_request(Msg, Path, Opts) ->
 	
 %%% @doc Verify the HashPath of a message, given a list of messages that
 %%% represent its history.
-verify_hashpath([Base, Msg2, Msg3|Rest], Opts) ->
-    CorrectHashpath = hashpath(Base, Msg2, Opts),
+verify_hashpath([Base, Req, Msg3|Rest], Opts) ->
+    CorrectHashpath = hashpath(Base, Req, Opts),
     FromMsg3 = from_message(hashpath, Msg3, Opts),
     CorrectHashpath == FromMsg3 andalso
         case Rest of
             [] -> true;
-            _ -> verify_hashpath([Msg2, Msg3|Rest], Opts)
+            _ -> verify_hashpath([Req, Msg3|Rest], Opts)
         end.
 
 %% @doc Extract the request path or hashpath from a message. We do not use
@@ -331,33 +331,33 @@ normalize(Path) ->
 %%% TESTS
 hashpath_test() ->
     Base = #{ priv => #{<<"empty">> => <<"message">>} },
-    Msg2 = #{ priv => #{<<"exciting">> => <<"message2">>} },
-    Hashpath = hashpath(Base, Msg2, #{}),
+    Req = #{ priv => #{<<"exciting">> => <<"message2">>} },
+    Hashpath = hashpath(Base, Req, #{}),
     ?assert(is_binary(Hashpath) andalso byte_size(Hashpath) == 87).
 
 hashpath_direct_msg2_test() ->
     Base = #{ <<"base">> => <<"message">> },
-    Msg2 = #{ <<"path">> => <<"base">> },
-    Hashpath = hashpath(Base, Msg2, #{}),
+    Req = #{ <<"path">> => <<"base">> },
+    Hashpath = hashpath(Base, Req, #{}),
     [_, KeyName] = term_to_path_parts(Hashpath),
     ?assert(matches(KeyName, <<"base">>)).
 
 multiple_hashpaths_test() ->
     Base = #{ <<"empty">> => <<"message">> },
-    Msg2 = #{ <<"exciting">> => <<"message2">> },
-    Msg3 = #{ priv => #{<<"hashpath">> => hashpath(Base, Msg2, #{}) } },
+    Req = #{ <<"exciting">> => <<"message2">> },
+    Msg3 = #{ priv => #{<<"hashpath">> => hashpath(Base, Req, #{}) } },
     Msg4 = #{ <<"exciting">> => <<"message4">> },
     Msg5 = hashpath(Msg3, Msg4, #{}),
     ?assert(is_binary(Msg5)).
 
 verify_hashpath_test() ->
     Base = #{ <<"test">> => <<"initial">> },
-    Msg2 = #{ <<"firstapplied">> => <<"msg2">> },
-    Msg3 = #{ priv => #{<<"hashpath">> => hashpath(Base, Msg2, #{})} },
-    Msg4 = #{ priv => #{<<"hashpath">> => hashpath(Msg2, Msg3, #{})} },
-    Msg3Fake = #{ priv => #{<<"hashpath">> => hashpath(Msg4, Msg2, #{})} },
-    ?assert(verify_hashpath([Base, Msg2, Msg3, Msg4], #{})),
-    ?assertNot(verify_hashpath([Base, Msg2, Msg3Fake, Msg4], #{})).
+    Req = #{ <<"firstapplied">> => <<"msg2">> },
+    Msg3 = #{ priv => #{<<"hashpath">> => hashpath(Base, Req, #{})} },
+    Msg4 = #{ priv => #{<<"hashpath">> => hashpath(Req, Msg3, #{})} },
+    Msg3Fake = #{ priv => #{<<"hashpath">> => hashpath(Msg4, Req, #{})} },
+    ?assert(verify_hashpath([Base, Req, Msg3, Msg4], #{})),
+    ?assertNot(verify_hashpath([Base, Req, Msg3Fake, Msg4], #{})).
 
 validate_path_transitions(X, Opts) ->
     {Head, X2} = pop_request(X, Opts),
@@ -407,13 +407,13 @@ term_to_path_parts_test() ->
 
 % calculate_multistage_hashpath_test() ->
 %     Base = #{ <<"base">> => <<"message">> },
-%     Msg2 = #{ <<"path">> => <<"2">> },
+%     Req = #{ <<"path">> => <<"2">> },
 %     Msg3 = #{ <<"path">> => <<"3">> },
 %     Msg4 = #{ <<"path">> => <<"4">> },
-%     Msg5 = hashpath(Base, [Msg2, Msg3, Msg4], #{}),
+%     Msg5 = hashpath(Base, [Req, Msg3, Msg4], #{}),
 %     ?assert(is_binary(Msg5)),
 %     Msg3Path = <<"3">>,
-%     Msg5b = hashpath(Base, [Msg2, Msg3Path, Msg4]),
+%     Msg5b = hashpath(Base, [Req, Msg3Path, Msg4]),
 %     ?assertEqual(Msg5, Msg5b).
 
 regex_matches_test() ->

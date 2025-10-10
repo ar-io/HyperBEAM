@@ -198,7 +198,7 @@ find_latest_outputs(Opts) ->
             <<"Results">> => #{ <<"Result-Number">> => 1 }, 
             <<"Process">> => Proc1 
         },
-    Msg2 =
+    Req =
         #{ 
             <<"Results">> => #{ <<"Result-Number">> => 2 }, 
             <<"Deep">> => #{ <<"Process">> => Proc1 } 
@@ -206,19 +206,19 @@ find_latest_outputs(Opts) ->
     % Write the messages to the cache.
     {ok, _} = write(ProcID, 0, Msg0, Opts),
     {ok, _} = write(ProcID, 1, Base, Opts),
-    {ok, _} = write(ProcID, 2, Msg2, Opts),
+    {ok, _} = write(ProcID, 2, Req, Opts),
     ?event(wrote_items),
     % Read the messages with various qualifiers.
     {ok, 2, ReadMsg2} = latest(ProcID, Opts),
     ?event({read_latest, ReadMsg2}),
-    ?assert(hb_message:match(Msg2, ReadMsg2)),
+    ?assert(hb_message:match(Req, ReadMsg2)),
     ?event(read_latest_slot_without_qualifiers),
     {ok, 1, ReadMsg1Required} = latest(ProcID, <<"Process">>, Opts),
     ?event({read_latest_with_process, ReadMsg1Required}),
     ?assert(hb_message:match(Base, ReadMsg1Required)),
     ?event(read_latest_slot_with_shallow_key),
     {ok, 2, ReadMsg2Required} = latest(ProcID, <<"Deep/Process">>, Opts),
-    ?assert(hb_message:match(Msg2, ReadMsg2Required)),
+    ?assert(hb_message:match(Req, ReadMsg2Required)),
     ?event(read_latest_slot_with_deep_key),
     {ok, 1, ReadMsg1} = latest(ProcID, [], 1, Opts),
     ?assert(hb_message:match(Base, ReadMsg1)).

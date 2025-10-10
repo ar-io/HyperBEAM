@@ -574,10 +574,10 @@ deep_set_new_messages_test() ->
     % Test that new messages are created when the path does not exist.
     Msg0 = #{ <<"a">> => #{ <<"b">> => #{ <<"c">> => <<"1">> } } },
     Base = hb_ao:set(Msg0, <<"d/e">>, <<"3">>, Opts),
-    Msg2 = hb_ao:set(Base, <<"d/f">>, <<"4">>, Opts),
+    Req = hb_ao:set(Base, <<"d/f">>, <<"4">>, Opts),
     ?assert(
         hb_message:match(
-            Msg2,
+            Req,
             #{ 
                 <<"a">> =>
                     #{
@@ -592,7 +592,7 @@ deep_set_new_messages_test() ->
         )
     ),
     Msg3 = hb_ao:set(
-        Msg2,
+        Req,
         #{ 
             <<"z/a">> => <<"0">>,
             <<"z/b">> => <<"1">>,
@@ -619,11 +619,11 @@ deep_set_new_messages_test() ->
 deep_set_with_device_test(Opts) ->
     Device = #{
         set =>
-            fun(Base, Msg2) ->
+            fun(Base, Req) ->
                 % A device where the set function modifies the key
                 % and adds a modified flag.
                 {Key, Val} =
-                    hd(hb_maps:to_list(hb_maps:without([<<"path">>, <<"priv">>], Msg2, Opts), Opts)),
+                    hd(hb_maps:to_list(hb_maps:without([<<"path">>, <<"priv">>], Req, Opts), Opts)),
                 {ok, Base#{ Key => Val, <<"modified">> => true }}
             end
     },
@@ -668,10 +668,10 @@ device_exports_test(Opts) ->
 		info => fun() -> #{ exports => [set] } end,
 		set => fun(_, _) -> {ok, <<"SET">>} end
 	},
-	Msg2 = #{ <<"device">> => Dev },
-	?assert(hb_ao_device:is_exported(Msg2, Dev, info, Opts)),
-	?assert(hb_ao_device:is_exported(Msg2, Dev, set, Opts)),
-	?assert(not hb_ao_device:is_exported(Msg2, Dev, not_exported, Opts)),
+	Req = #{ <<"device">> => Dev },
+	?assert(hb_ao_device:is_exported(Req, Dev, info, Opts)),
+	?assert(hb_ao_device:is_exported(Req, Dev, set, Opts)),
+	?assert(not hb_ao_device:is_exported(Req, Dev, not_exported, Opts)),
     Dev2 = #{
         info =>
             fun() ->

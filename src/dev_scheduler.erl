@@ -5,11 +5,11 @@
 %%% It exposes the following keys for scheduling:
 %%%     `#{ method: GET, path: <<"/info">> }' ->
 %%%         Returns information about the scheduler.
-%%%     `#{ method: GET, path: <<"/slot">> }' -> `slot(Base, Msg2, Opts)'
+%%%     `#{ method: GET, path: <<"/slot">> }' -> `slot(Base, Req, Opts)'
 %%%         Returns the current slot for a process.
-%%%     `#{ method: GET, path: <<"/schedule">> }' -> `get_schedule(Base, Msg2, Opts)'
+%%%     `#{ method: GET, path: <<"/schedule">> }' -> `get_schedule(Base, Req, Opts)'
 %%%         Returns the schedule for a process in a cursor-traversable format.
-%%%    ` #{ method: POST, path: <<"/schedule">> }' -> `post_schedule(Base, Msg2, Opts)'
+%%%    ` #{ method: POST, path: <<"/schedule">> }' -> `post_schedule(Base, Req, Opts)'
 %%%         Schedules a new message for a process, or starts a new scheduler
 %%%         for the given message.
 %%% </pre>
@@ -70,16 +70,16 @@ parse_schedulers(SchedLoc) when is_binary(SchedLoc) ->
     ).
 
 %% @doc The default handler for the scheduler device.
-router(_, Base, Msg2, Opts) ->
-    ?event({scheduler_router_called, {msg2, Msg2}, {opts, Opts}}),
-    schedule(Base, Msg2, Opts).
+router(_, Base, Req, Opts) ->
+    ?event({scheduler_router_called, {msg2, Req}, {opts, Opts}}),
+    schedule(Base, Req, Opts).
 
 %% @doc Load the schedule for a process into the cache, then return the next
 %% assignment. Assumes that Base is a `dev_process' or similar message, having
 %% a `Current-Slot' key. It stores a local cache of the schedule in the
 %% `priv/To-Process' key.
-next(Base, Msg2, Opts) ->
-    ?event(debug_next, {scheduler_next_called, {msg1, Base}, {msg2, Msg2}}),
+next(Base, Req, Opts) ->
+    ?event(debug_next, {scheduler_next_called, {msg1, Base}, {msg2, Req}}),
     ?event(next, started_next),
     ?event(next_profiling, started_next),
     Schedule = message_cached_assignments(Base, Opts),
@@ -99,7 +99,7 @@ next(Base, Msg2, Opts) ->
     NextAssignment =
         find_next_assignment(
             Base,
-            Msg2,
+            Req,
             Schedule,
             LastProcessed,
             Opts
@@ -202,8 +202,8 @@ validate_next_slot(Base, [NextAssignment|Assignments], Lookahead, Last, Opts) ->
 %% or the inbox (thanks to a lookahead-worker).
 find_next_assignment(_Msg1, _Msg2, Schedule = [_Next|_], _LastSlot, _Opts) ->
     {ok, Schedule, undefined};
-find_next_assignment(Base, Msg2, _Schedule, LastSlot, Opts) ->
-    ProcID = dev_process:process_id(Base, Msg2, Opts),
+find_next_assignment(Base, Req, _Schedule, LastSlot, Opts) ->
+    ProcID = dev_process:process_id(Base, Req, Opts),
     LocalCacheRes =
         case hb_util:atom(hb_opts:get(scheduler_ignore_local_cache, false, Opts)) of
             true -> not_found;
@@ -361,10 +361,10 @@ status(_M1, _M2, _Opts) ->
     }.
 
 %% @doc Router for `record' requests. Expects either a `POST' or `GET' request.
-location(Base, Msg2, Opts) ->
-    case hb_ao:get(<<"method">>, Msg2, <<"GET">>, Opts) of
-        <<"POST">> -> post_location(Base, Msg2, Opts);
-        <<"GET">> -> get_location(Base, Msg2, Opts)
+location(Base, Req, Opts) ->
+    case hb_ao:get(<<"method">>, Req, <<"GET">>, Opts) of
+        <<"POST">> -> post_location(Base, Req, Opts);
+        <<"GET">> -> get_location(Base, Req, Opts)
     end.
 
 %% @doc Search for the location of the scheduler in the scheduler-location
@@ -557,20 +557,20 @@ post_location(Base, RawReq, RawOpts) ->
 
 %% @doc A router for choosing between getting the existing schedule, or
 %% scheduling a new message.
-schedule(Base, Msg2, Opts) ->
-    ?event({resolving_schedule_request, {msg2, Msg2}, {state_msg, Base}}),
-    case hb_util:key_to_atom(hb_ao:get(<<"method">>, Msg2, <<"GET">>, Opts)) of
-        post -> post_schedule(Base, Msg2, Opts);
-        get -> get_schedule(Base, Msg2, Opts)
+schedule(Base, Req, Opts) ->
+    ?event({resolving_schedule_request, {msg2, Req}, {state_msg, Base}}),
+    case hb_util:key_to_atom(hb_ao:get(<<"method">>, Req, <<"GET">>, Opts)) of
+        post -> post_schedule(Base, Req, Opts);
+        get -> get_schedule(Base, Req, Opts)
     end.
 
 %% @doc Schedules a new message on the SU. Searches Base for the appropriate ID,
 %% then uses the wallet address of the scheduler to determine if the message is
 %% for this scheduler. If so, it schedules the message and returns the assignment.
-post_schedule(Base, Msg2, Opts) ->
+post_schedule(Base, Req, Opts) ->
     ?event(scheduling_message),
     % Find the target message to schedule:
-    ToSched = find_message_to_schedule(Base, Msg2, Opts),
+    ToSched = find_message_to_schedule(Base, Req, Opts),
     ?event({to_sched, ToSched}),
     % Find the ProcessID of the target message:
     % - If it is a Process, use the ID of the message.
@@ -580,7 +580,7 @@ post_schedule(Base, Msg2, Opts) ->
             <<"Process">> -> hb_message:id(ToSched, all, Opts);
             _ ->
                 case hb_ao:get(<<"target">>, ToSched, not_found, Opts) of
-                    not_found -> find_target_id(Base, Msg2, Opts);
+                    not_found -> find_target_id(Base, Req, Opts);
                     Target -> hb_util:human_id(Target)
                 end
         end,
@@ -632,32 +632,32 @@ post_schedule(Base, Msg2, Opts) ->
             }
     end.
 
-%% @doc Post schedule the message. `Msg2' by this point has been refined to only
+%% @doc Post schedule the message. `Req' by this point has been refined to only
 %% committed keys, and to only include the `target' message that is to be
 %% scheduled.
-do_post_schedule(ProcID, PID, Msg2, Opts) ->
+do_post_schedule(ProcID, PID, Req, Opts) ->
     % Should we verify the message again before scheduling?
     Verified =
         case hb_opts:get(verify_assignments, true, Opts) of
             true ->
                 ?event(debug_scheduler_verify,
-                    {verifying_message_before_scheduling, Msg2}
+                    {verifying_message_before_scheduling, Req}
                 ),
-                Res = length(hb_message:signers(Msg2, Opts)) > 0
-                    andalso hb_message:verify(Msg2, signers, Opts),
+                Res = length(hb_message:signers(Req, Opts)) > 0
+                    andalso hb_message:verify(Req, signers, Opts),
                 ?event(debug_scheduler_verify, {verified, Res}),
                 Res;
             accept_unsigned ->
                 ?event(
                     debug_scheduler_verify,
-                    {accepting_unsigned_message_before_scheduling, Msg2}
+                    {accepting_unsigned_message_before_scheduling, Req}
                 ),
-                hb_message:verify(Msg2, signers, Opts);
+                hb_message:verify(Req, signers, Opts);
             false -> true
         end,
     ?event({verified, Verified}),
     % Handle scheduling of the message if the message is valid.
-    case {Verified, hb_ao:get(<<"type">>, Msg2, Opts)} of
+    case {Verified, hb_ao:get(<<"type">>, Req, Opts)} of
         {false, _} ->
             {error,
                 #{
@@ -667,10 +667,10 @@ do_post_schedule(ProcID, PID, Msg2, Opts) ->
                 }
             };
         {true, <<"Process">>} ->
-            {ok, _} = hb_cache:write(Msg2, Opts),
+            {ok, _} = hb_cache:write(Req, Opts),
             spawn(
                 fun() ->
-                    {ok, Results} = hb_client:upload(Msg2, Opts),
+                    {ok, Results} = hb_client:upload(Req, Opts),
                     ?event(
                         {uploaded_process, {proc_id, ProcID}, {results, Results}}
                     )
@@ -683,7 +683,7 @@ do_post_schedule(ProcID, PID, Msg2, Opts) ->
                     {is_alive, is_process_alive(PID)}
                 }
             ),
-            {ok, dev_scheduler_server:schedule(PID, Msg2)};
+            {ok, dev_scheduler_server:schedule(PID, Req)};
         {true, _} ->
             ?event(
                 {scheduling_message,
@@ -693,7 +693,7 @@ do_post_schedule(ProcID, PID, Msg2, Opts) ->
                 }
             ),
             % If Message2 is not a process, use the ID of Message1 as the PID
-            {ok, dev_scheduler_server:schedule(PID, Msg2)}
+            {ok, dev_scheduler_server:schedule(PID, Req)}
     end.
 
 %% @doc Locate the correct scheduling server for a given process.
@@ -1016,20 +1016,20 @@ remote_slot(<<"ao.TN.1">>, ProcID, Node, Opts) ->
 %% @doc Generate and return a schedule for a process, optionally between
 %% two slots -- labelled as `from' and `to'. If the schedule is not local,
 %% we redirect to the remote scheduler or proxy based on the node opts.
-get_schedule(Base, Msg2, Opts) ->
-    ProcID = hb_util:human_id(find_target_id(Base, Msg2, Opts)),
+get_schedule(Base, Req, Opts) ->
+    ProcID = hb_util:human_id(find_target_id(Base, Req, Opts)),
     From =
-        case hb_ao:get(<<"from">>, Msg2, not_found, Opts) of
+        case hb_ao:get(<<"from">>, Req, not_found, Opts) of
             not_found -> 0;
             X when X < 0 -> 0;
             FromRes -> hb_util:int(FromRes)
         end,
     To =
-        case hb_ao:get(<<"to">>, Msg2, not_found, Opts) of
+        case hb_ao:get(<<"to">>, Req, not_found, Opts) of
             not_found -> undefined;
             ToRes -> hb_util:int(ToRes)
         end,
-    Format = hb_ao:get(<<"accept">>, Msg2, <<"application/http">>, Opts),
+    Format = hb_ao:get(<<"accept">>, Req, <<"application/http">>, Opts),
     ?event(
         {parsed_get_schedule,
             {process, ProcID},
@@ -1495,22 +1495,22 @@ post_legacy_schedule(ProcID, OnlyCommitted, Node, Opts) ->
 %% @doc Find the schedule ID from a given request. The precidence order for 
 %% search is as follows:
 %% [1. `ToSched/id' -- in the case of `POST schedule', handled locally]
-%% 2. `Msg2/target'
-%% 3. `Msg2/id' when `Msg2' has `type: Process'
+%% 2. `Req/target'
+%% 3. `Req/id' when `Req' has `type: Process'
 %% 4. `Base/process/id'
 %% 5. `Base/id' when `Base' has `type: Process'
-%% 6. `Msg2/id'
-find_target_id(Base, Msg2, Opts) ->
+%% 6. `Req/id'
+find_target_id(Base, Req, Opts) ->
     TempOpts = Opts#{ hashpath => ignore },
-    Res = case hb_ao:resolve(Msg2, <<"target">>, TempOpts) of
+    Res = case hb_ao:resolve(Req, <<"target">>, TempOpts) of
         {ok, Target} ->
-            % ID found at Msg2/target
+            % ID found at Req/target
             Target;
         _ ->
-            case hb_ao:resolve(Msg2, <<"type">>, TempOpts) of
+            case hb_ao:resolve(Req, <<"type">>, TempOpts) of
                 {ok, <<"Process">>} ->
-                    % Msg2 is a Process, so the ID is at Msg2/id
-                    hb_message:id(Msg2, all, Opts);
+                    % Req is a Process, so the ID is at Req/id
+                    hb_message:id(Req, all, Opts);
                 _ ->
                     case hb_ao:resolve(Base, <<"process">>, TempOpts) of
                         {ok, Process} ->
@@ -1523,36 +1523,36 @@ find_target_id(Base, Msg2, Opts) ->
                                     % Yes, so try Base/id
                                     hb_message:id(Base, all, Opts);
                                 _ ->
-                                    % No, so the ID is at Msg2/id
-                                    hb_message:id(Msg2, all, Opts)
+                                    % No, so the ID is at Req/id
+                                    hb_message:id(Req, all, Opts)
                             end
                 end
             end
     end,
-    ?event({found_id, {id, Res}, {msg1, Base}, {msg2, Msg2}}),
+    ?event({found_id, {id, Res}, {msg1, Base}, {msg2, Req}}),
     Res.
 
 %% @doc Search the given base and request message pair to find the message to
 %% schedule. The precidence order for search is as follows:
-%% 1. A key in `Msg2' with the value `self', indicating that the entire message
+%% 1. A key in `Req' with the value `self', indicating that the entire message
 %%    is the subject.
-%% 2. A key in `Msg2' with another value, present in that message.
+%% 2. A key in `Req' with another value, present in that message.
 %% 3. The body of the message.
 %% 4. The message itself.
-find_message_to_schedule(_Msg1, Msg2, Opts) ->
+find_message_to_schedule(_Msg1, Req, Opts) ->
     Subject =
         hb_ao:get(
             <<"subject">>,
-            Msg2,
+            Req,
             not_found,
             Opts#{ hashpath => ignore }
         ),
     case Subject of
-        <<"self">> -> Msg2;
+        <<"self">> -> Req;
         not_found ->
-            hb_ao:get(<<"body">>, Msg2, Msg2, Opts#{ hashpath => ignore });
+            hb_ao:get(<<"body">>, Req, Req, Opts#{ hashpath => ignore });
         Subject ->
-            hb_ao:get(Subject, Msg2, Opts#{ hashpath => ignore })
+            hb_ao:get(Subject, Req, Opts#{ hashpath => ignore })
     end.
 
 %% @doc Generate a `GET /schedule' response for a process.
@@ -1735,7 +1735,7 @@ register_location_on_boot_test() ->
 schedule_message_and_get_slot_test() ->
     start(),
     Base = test_process(),
-    Msg2 = #{
+    Req = #{
         <<"path">> => <<"schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> =>
@@ -1744,8 +1744,8 @@ schedule_message_and_get_slot_test() ->
                 <<"test-key">> => <<"true">>
             }, hb:wallet())
     },
-    ?assertMatch({ok, _}, hb_ao:resolve(Base, Msg2, #{})),
-    ?assertMatch({ok, _}, hb_ao:resolve(Base, Msg2, #{})),
+    ?assertMatch({ok, _}, hb_ao:resolve(Base, Req, #{})),
+    ?assertMatch({ok, _}, hb_ao:resolve(Base, Req, #{})),
     Msg3 = #{
         <<"path">> => <<"slot">>,
         <<"method">> => <<"GET">>,
@@ -1762,7 +1762,7 @@ redirect_to_hint_test() ->
     RandAddr = hb_util:human_id(crypto:strong_rand_bytes(32)),
     TestLoc = <<"http://test.computer">>,
     Base = test_process(<< RandAddr/binary, "?hint=", TestLoc/binary>>),
-    Msg2 = #{
+    Req = #{
         <<"path">> => <<"schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> => Base
@@ -1771,7 +1771,7 @@ redirect_to_hint_test() ->
         {ok, #{ <<"location">> := Location }} when is_binary(Location),
         hb_ao:resolve(
             Base,
-            Msg2,
+            Req,
             #{
                 scheduler_follow_hints => true,
                 scheduler_follow_redirects => false
@@ -1817,7 +1817,7 @@ redirect_from_graphql() ->
 get_local_schedule_test() ->
     start(),
     Base = test_process(),
-    Msg2 = #{
+    Req = #{
         <<"path">> => <<"schedule">>,
         <<"method">> => <<"POST">>,
         <<"body">> =>
@@ -1835,7 +1835,7 @@ get_local_schedule_test() ->
                 <<"test-key">> => <<"Test-Val-2">>
             }, hb:wallet())
     },
-    ?assertMatch({ok, _}, hb_ao:resolve(Base, Msg2, #{})),
+    ?assertMatch({ok, _}, hb_ao:resolve(Base, Req, #{})),
     ?assertMatch({ok, _}, hb_ao:resolve(Base, Msg3, #{})),
     ?assertMatch(
         {ok, _},
@@ -1967,7 +1967,7 @@ http_get_schedule_test_() ->
 			<<"method">> => <<"POST">>,
 			<<"body">> => PMsg
 		}, Opts),
-		Msg2 = hb_message:commit(#{
+		Req = hb_message:commit(#{
 			<<"path">> => <<"/~scheduler@1.0/schedule">>,
 			<<"method">> => <<"POST">>,
 			<<"body">> =>
@@ -1986,7 +1986,7 @@ http_get_schedule_test_() ->
 		{ok, _} = hb_http:post(Node, Base, Opts),
 		lists:foreach(
 			fun(_) ->
-                {ok, Res} = hb_http:post(Node, Msg2, Opts),
+                {ok, Res} = hb_http:post(Node, Req, Opts),
                 ?event(debug_scheduler_test, {res, Res})
             end,
 			lists:seq(1, 10)
@@ -2090,7 +2090,7 @@ http_get_json_schedule_test_() ->
 			<<"body">> => PMsg
 		}, Opts),
 		{ok, _} = hb_http:post(Node, Base, Opts),
-		Msg2 = hb_message:commit(#{
+		Req = hb_message:commit(#{
 			<<"path">> => <<"/~scheduler@1.0/schedule">>,
 			<<"method">> => <<"POST">>,
 			<<"body">> =>
@@ -2105,7 +2105,7 @@ http_get_json_schedule_test_() ->
 			Opts
 		),
 		lists:foreach(
-			fun(_) -> {ok, _} = hb_http:post(Node, Msg2, Opts) end,
+			fun(_) -> {ok, _} = hb_http:post(Node, Req, Opts) end,
 			lists:seq(1, 10)
 		),
 		?assertMatch({ok, #{ <<"current">> := 10 }}, http_get_slot(Node, PMsg)),

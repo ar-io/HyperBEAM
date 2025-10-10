@@ -488,8 +488,8 @@ generate_stack(File, _Mode, RawOpts) ->
                 <<"authority">> => hb:address()
             }, Opts)
     },
-    {ok, Msg2} = hb_ao:resolve(Base, <<"init">>, Opts),
-    Msg2.
+    {ok, Req} = hb_ao:resolve(Base, <<"init">>, Opts),
+    Req.
 
 generate_aos_msg(ProcID, Code) ->
     generate_aos_msg(ProcID, Code, #{}).
@@ -536,10 +536,10 @@ aos_stack_benchmark_test_() ->
                 Msg,
                 Opts
             ),
-        Msg2 = generate_aos_msg(ProcID, <<"return 1+1">>, Opts),
+        Req = generate_aos_msg(ProcID, <<"return 1+1">>, Opts),
         Iterations =
             hb_test_utils:benchmark(
-                fun() -> hb_ao:resolve(Initialized, Msg2, Opts) end,
+                fun() -> hb_ao:resolve(Initialized, Req, Opts) end,
                 BenchTime
             ),
         hb_test_utils:benchmark_print(

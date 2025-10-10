@@ -865,8 +865,8 @@ generate_stack(File) ->
                 <<"authority">> => hb:address()
             }, Wallet)
     },
-    {ok, Msg2} = hb_ao:resolve(Base, <<"init">>, #{}),
-    Msg2.
+    {ok, Req} = hb_ao:resolve(Base, <<"init">>, #{}),
+    Req.
 
 % execute_aos_call(Base) ->
 %     Req =

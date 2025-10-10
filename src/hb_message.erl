@@ -556,7 +556,7 @@ matchable_keys(Map) ->
 %% across nested messages. If the values are non-numeric, the new value is 
 %% returned if the values are different. Keys found only in the first message
 %% are dropped, as they have 'changed' to absence.
-diff(Base, Msg2, Opts) when is_map(Base) andalso is_map(Msg2) ->
+diff(Base, Req, Opts) when is_map(Base) andalso is_map(Req) ->
     maps:filtermap(
         fun(Key, Val2) ->
             case hb_maps:get(Key, Base, not_found, Opts) of
@@ -580,7 +580,7 @@ diff(Base, Msg2, Opts) when is_map(Base) andalso is_map(Msg2) ->
                     {true, Val2}
             end
         end,
-        Msg2
+        Req
     );
 diff(_Val1, _Val2, _Opts) ->
     not_found.

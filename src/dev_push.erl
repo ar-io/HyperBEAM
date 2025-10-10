@@ -657,10 +657,10 @@ full_push_test_() ->
         ?event({test_setup, {msg1, Base}, {sched_init, SchedInit}}),
         Script = ping_pong_script(2),
         ?event({script, Script}),
-        {ok, Msg2} = dev_process:schedule_aos_call(Base, Script, Opts),
-        ?event({msg_sched_result, Msg2}),
+        {ok, Req} = dev_process:schedule_aos_call(Base, Script, Opts),
+        ?event({msg_sched_result, Req}),
         {ok, StartingMsgSlot} =
-            hb_ao:resolve(Msg2, #{ <<"path">> => <<"slot">> }, Opts),
+            hb_ao:resolve(Req, #{ <<"path">> => <<"slot">> }, Opts),
         ?event({starting_msg_slot, StartingMsgSlot}),
         Msg3 =
             #{
@@ -719,10 +719,10 @@ push_as_identity_test_() ->
         ?event({test_setup, {msg1, Base}, {sched_init, SchedInit}}),
         Script = ping_pong_script(2),
         ?event({script, Script}),
-        {ok, Msg2} = dev_process:schedule_aos_call(Base, Script),
-        ?event(push, {msg_sched_result, Msg2}),
+        {ok, Req} = dev_process:schedule_aos_call(Base, Script),
+        ?event(push, {msg_sched_result, Req}),
         {ok, StartingMsgSlot} =
-            hb_ao:resolve(Msg2, #{ <<"path">> => <<"slot">> }, Opts),
+            hb_ao:resolve(Req, #{ <<"path">> => <<"slot">> }, Opts),
         ?event({starting_msg_slot, StartingMsgSlot}),
         Msg3 =
             #{
@@ -979,10 +979,10 @@ nested_push_prompts_encoding_change() ->
     ?event({test_setup, {msg1, Base}, {sched_init, SchedInit}}),
     Script = message_to_legacynet_scheduler_script(),
     ?event({script, Script}),
-    {ok, Msg2} = dev_process:schedule_aos_call(Base, Script),
-    ?event(push, {msg_sched_result, Msg2}),
+    {ok, Req} = dev_process:schedule_aos_call(Base, Script),
+    ?event(push, {msg_sched_result, Req}),
     {ok, StartingMsgSlot} =
-        hb_ao:resolve(Msg2, #{ <<"path">> => <<"slot">> }, Opts),
+        hb_ao:resolve(Req, #{ <<"path">> => <<"slot">> }, Opts),
     ?event({starting_msg_slot, StartingMsgSlot}),
     Msg3 =
         #{

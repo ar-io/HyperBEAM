@@ -123,15 +123,15 @@ init(M1, M2, Opts) ->
     }.
 
 %% @doc Take a BEAMR import call and resolve it using `hb_ao'.
-default_import_resolver(Base, Msg2, Opts) ->
+default_import_resolver(Base, Req, Opts) ->
     #{
         instance := WASM,
         module := Module,
         func := Func,
         args := Args,
         func_sig := Signature
-    } = Msg2,
-    Prefix = dev_stack:prefix(Base, Msg2, Opts),
+    } = Req,
+    Prefix = dev_stack:prefix(Base, Req, Opts),
     {ok, Msg3} =
         hb_ao:resolve(
             hb_private:set(
@@ -307,14 +307,14 @@ instance(M1, M2, Opts) ->
 %% @doc Handle standard library calls by:
 %% 1. Adding the right prefix to the path from BEAMR.
 %% 2. Adding the state to the message at the stdlib path.
-%% 3. Resolving the adjusted-path-Msg2 against the added-state-Base.
+%% 3. Resolving the adjusted-path-Req against the added-state-Base.
 %% 4. If it succeeds, return the new state from the message.
 %% 5. If it fails with `not_found', call the stub handler.
-import(Base, Msg2, Opts) ->
+import(Base, Req, Opts) ->
     % 1. Adjust the path to the stdlib.
-    ModName = hb_ao:get(<<"module">>, Msg2, Opts),
-    FuncName = hb_ao:get(<<"func">>, Msg2, Opts),
-    Prefix = dev_stack:prefix(Base, Msg2, Opts),
+    ModName = hb_ao:get(<<"module">>, Req, Opts),
+    FuncName = hb_ao:get(<<"func">>, Req, Opts),
+    Prefix = dev_stack:prefix(Base, Req, Opts),
     AdjustedPath =
         <<
             Prefix/binary,
@@ -324,7 +324,7 @@ import(Base, Msg2, Opts) ->
             FuncName/binary
         >>,
     StatePath = << Prefix/binary, "/stdlib/", ModName/binary, "/state" >>,
-    AdjustedMsg2 = Msg2#{ <<"path">> => AdjustedPath },
+    AdjustedMsg2 = Req#{ <<"path">> => AdjustedPath },
     % 2. Add the current state to the message at the stdlib path.
     AdjustedMsg1 =
         hb_ao:set(
@@ -341,14 +341,14 @@ import(Base, Msg2, Opts) ->
         {error, not_found} ->
             ?event(stdlib_not_found),
             % 5. Failure. Call the stub handler.
-            undefined_import_stub(Base, Msg2, Opts)
+            undefined_import_stub(Base, Req, Opts)
     end.
 
 %% @doc Log the call to the standard library as an event, and write the
 %% call details into the message.
-undefined_import_stub(Base, Msg2, Opts) ->
-    ?event({unimplemented_dev_wasm_call, {msg1, Base}, {msg2, Msg2}}),
-    Prefix = dev_stack:prefix(Base, Msg2, Opts),
+undefined_import_stub(Base, Req, Opts) ->
+    ?event({unimplemented_dev_wasm_call, {msg1, Base}, {msg2, Req}}),
+    Prefix = dev_stack:prefix(Base, Req, Opts),
     UndefinedCallsPath =
         <<"state/results/", Prefix/binary, "/undefined-calls">>,
     Msg3 = hb_ao:set(
@@ -356,7 +356,7 @@ undefined_import_stub(Base, Msg2, Opts) ->
         #{
             UndefinedCallsPath =>
                 [
-                    Msg2
+                    Req
                 |
                     case hb_ao:get(UndefinedCallsPath, Base, Opts) of
                         not_found -> [];
@@ -384,9 +384,9 @@ input_prefix_test() ->
             <<"input-prefix">> => <<"test-in">>,
             <<"test-in">> => #{ <<"image">> => ImageID }
         },
-    {ok, Msg2} = hb_ao:resolve(Base, <<"init">>, #{}),
-    ?event({after_init, Msg2}),
-    Priv = hb_private:from_message(Msg2),
+    {ok, Req} = hb_ao:resolve(Base, <<"init">>, #{}),
+    ?event({after_init, Req}),
+    Priv = hb_private:from_message(Req),
     ?assertMatch(
         {ok, Instance} when is_pid(Instance),
         hb_ao:resolve(Priv, <<"instance">>, #{})
@@ -467,7 +467,7 @@ benchmark_test() ->
     init(),
     Msg0 = cache_wasm_image("test/test-64.wasm"),
     {ok, Base} = hb_ao:resolve(Msg0, <<"init">>, #{}),
-    Msg2 =
+    Req =
         hb_maps:merge(
             Base,
             #{
@@ -479,7 +479,7 @@ benchmark_test() ->
     Iterations =
         hb_test_utils:benchmark(
             fun() ->
-                hb_ao:resolve(Msg2, <<"compute">>, #{})
+                hb_ao:resolve(Req, <<"compute">>, #{})
             end,
             BenchTime
         ),
@@ -499,7 +499,7 @@ state_export_and_restore_test() ->
     % reasonable amount of memory to work with.
     Msg0 = cache_wasm_image("test/pow_calculator.wasm"),
     {ok, Base} = hb_ao:resolve(Msg0, <<"init">>, #{}),
-    Msg2 =
+    Req =
         hb_maps:merge(
             Base,
             Extras = #{
@@ -513,9 +513,9 @@ state_export_and_restore_test() ->
             },
 			#{}
         ),
-    ?event({after_setup, Msg2}),
+    ?event({after_setup, Req}),
     % Compute a computation and export the state.
-    {ok, Msg3a} = hb_ao:resolve(Msg2, <<"compute">>, #{}),
+    {ok, Msg3a} = hb_ao:resolve(Req, <<"compute">>, #{}),
     ?assertEqual([4], hb_ao:get(<<"results/output">>, Msg3a, #{})),
     {ok, State} = hb_ao:resolve(Msg3a, <<"snapshot">>, #{}),
     ?event({state_res, State}),
@@ -544,7 +544,7 @@ test_run_wasm(File, Func, Params, AdditionalMsg) ->
     Msg0 = cache_wasm_image(File),
     {ok, Base} = hb_ao:resolve(Msg0, <<"init">>, #{}),
     ?event({after_init, Base}),
-    Msg2 =
+    Req =
         hb_maps:merge(
             Base,
             hb_ao:set(
@@ -557,7 +557,7 @@ test_run_wasm(File, Func, Params, AdditionalMsg) ->
             ),
 			#{}
         ),
-    ?event({after_setup, Msg2}),
-    {ok, StateRes} = hb_ao:resolve(Msg2, <<"compute">>, #{}),
+    ?event({after_setup, Req}),
+    {ok, StateRes} = hb_ao:resolve(Req, <<"compute">>, #{}),
     ?event({after_resolve, StateRes}),
     hb_ao:resolve(StateRes, <<"results/output">>, #{}).

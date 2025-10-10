@@ -23,26 +23,26 @@ info(_Msg1, _Msg2, _Opts) ->
 	{ok, #{<<"status">> => 200, <<"body">> => InfoBody}}.
 
 %% @doc Default handler: Assume that the key is an interval descriptor.
-handler(<<"set">>, Base, Msg2, Opts) -> dev_message:set(Base, Msg2, Opts);
+handler(<<"set">>, Base, Req, Opts) -> dev_message:set(Base, Req, Opts);
 handler(<<"keys">>, Base, _Msg2, _Opts) -> dev_message:keys(Base);
-handler(Interval, Base, Msg2, Opts) ->
-    every(Base, Msg2#{ <<"interval">> => Interval }, Opts).
+handler(Interval, Base, Req, Opts) ->
+    every(Base, Req#{ <<"interval">> => Interval }, Opts).
 
 %% @doc Exported function for scheduling a one-time message.
-once(_Msg1, Msg2, Opts) ->
-	case extract_path(<<"once">>, Msg2, Opts) of
+once(_Msg1, Req, Opts) ->
+	case extract_path(<<"once">>, Req, Opts) of
 		not_found ->
 			{error, <<"No cron path found in message.">>};
 		CronPath ->
-			ReqMsgID = hb_message:id(Msg2, all, Opts),
+			ReqMsgID = hb_message:id(Req, all, Opts),
 			% make the path specific for the end device to be used
-			ModifiedMsg2 =
+			ModifiedReq =
                 maps:remove(
                     <<"cron-path">>,
-                    maps:put(<<"path">>, CronPath, Msg2)
+                    maps:put(<<"path">>, CronPath, Req)
                 ),
 			Name = {<<"cron@1.0">>, ReqMsgID},
-			Pid = spawn(fun() -> once_worker(CronPath, ModifiedMsg2, Opts) end),
+			Pid = spawn(fun() -> once_worker(CronPath, ModifiedReq, Opts) end),
 			hb_name:register(Name, Pid),
 			{
                 ok,

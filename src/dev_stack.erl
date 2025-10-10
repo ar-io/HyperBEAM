@@ -29,8 +29,8 @@
 %%% (its number if the stack is a list).
 %%% 
 %%% You can switch between fold and map modes by setting the `Mode' key in the
-%%% `Msg2' to either `Fold' or `Map', or set it globally for the stack by
-%%% setting the `Mode' key in the `Base' message. The key in `Msg2' takes
+%%% `Req' to either `Fold' or `Map', or set it globally for the stack by
+%%% setting the `Mode' key in the `Base' message. The key in `Req' takes
 %%% precedence over the key in `Base'.
 %%%
 %%% The key that is called upon the device stack is the same key that is used
@@ -85,7 +85,7 @@
 %%% 	/Base/AlicesExcitingKey ->
 %%% 		dev_stack:execute ->
 %%% 			/Base/Set?device=/Device-Stack/1 ->
-%%% 			/Msg2/AlicesExcitingKey ->
+%%% 			/Req/AlicesExcitingKey ->
 %%% 			/Msg3/Set?device=/Device-Stack/2 ->
 %%% 			/Msg4/AlicesExcitingKey
 %%% 			... ->
@@ -586,13 +586,13 @@ test_prefix_msg() ->
     }.
 
 no_prefix_test() ->
-    Msg2 =
+    Req =
         #{
             <<"path">> => <<"prefix_set">>,
             <<"key">> => <<"example">>,
             <<"example">> => 1
         },
-    {ok, Ex1Msg3} = hb_ao:resolve(test_prefix_msg(), Msg2, #{}),
+    {ok, Ex1Msg3} = hb_ao:resolve(test_prefix_msg(), Req, #{}),
     ?event({ex1, Ex1Msg3}),
     ?assertMatch(1, hb_ao:get(<<"example">>, Ex1Msg3, #{})).
 
@@ -601,13 +601,13 @@ output_prefix_test() ->
         (test_prefix_msg())#{
             <<"output-prefixes">> => #{ <<"1">> => <<"out1/">>, <<"2">> => <<"out2/">> }
         },
-    Msg2 =
+    Req =
         #{
             <<"path">> => <<"prefix_set">>,
             <<"key">> => <<"example">>,
             <<"example">> => 1
         },
-    {ok, Ex2Msg3} = hb_ao:resolve(Base, Msg2, #{}),
+    {ok, Ex2Msg3} = hb_ao:resolve(Base, Req, #{}),
     ?assertMatch(1,
         hb_ao:get(<<"out1/example">>, {as, dev_message, Ex2Msg3}, #{})),
     ?assertMatch(1,
@@ -619,14 +619,14 @@ input_and_output_prefixes_test() ->
             <<"input-prefixes">> => #{ 1 => <<"in1/">>, 2 => <<"in2/">> },
             <<"output-prefixes">> => #{ 1 => <<"out1/">>, 2 => <<"out2/">> }
         },
-    Msg2 =
+    Req =
         #{
             <<"path">> => <<"prefix_set">>,
             <<"key">> => <<"example">>,
             <<"in1">> => #{ <<"example">> => 1 },
             <<"in2">> => #{ <<"example">> => 2 }
         },
-    {ok, Msg3} = hb_ao:resolve(Base, Msg2, #{}),
+    {ok, Msg3} = hb_ao:resolve(Base, Req, #{}),
     ?assertMatch(1,
         hb_ao:get(<<"out1/example">>, {as, dev_message, Msg3}, #{})),
     ?assertMatch(2,
@@ -638,13 +638,13 @@ input_output_prefixes_passthrough_test() ->
             <<"output-prefix">> => <<"combined-out/">>,
             <<"input-prefix">> => <<"combined-in/">>
         },
-    Msg2 =
+    Req =
         #{
             <<"path">> => <<"prefix_set">>,
             <<"key">> => <<"example">>,
             <<"combined-in">> => #{ <<"example">> => 1 }
         },
-    {ok, Ex2Msg3} = hb_ao:resolve(Base, Msg2, #{}),
+    {ok, Ex2Msg3} = hb_ao:resolve(Base, Req, #{}),
     ?assertMatch(1,
         hb_ao:get(
             <<"combined-out/example">>,
@@ -668,8 +668,8 @@ reinvocation_test() ->
 		{ok, #{ <<"result">> := <<"INIT+D12+D22">> }},
 		Res1
 	),
-	{ok, Msg2} = Res1,
-	Res2 = hb_ao:resolve(Msg2, #{ <<"path">> => <<"append">>, <<"bin">> => <<"3">> }, #{}),
+	{ok, Req} = Res1,
+	Res2 = hb_ao:resolve(Req, #{ <<"path">> => <<"append">>, <<"bin">> => <<"3">> }, #{}),
 	?assertMatch(
 		{ok, #{ <<"result">> := <<"INIT+D12+D22+D13+D23">> }},
 		Res2

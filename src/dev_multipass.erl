@@ -34,7 +34,7 @@ basic_multipass_test() ->
             <<"passes">> => 2,
             <<"pass">> => 1
         },
-    Msg2 = Base#{ <<"pass">> => 2 },
+    Req = Base#{ <<"pass">> => 2 },
     ?assertMatch({pass, _}, hb_ao:resolve(Base, <<"Compute">>, #{})),
     ?event(alive),
-    ?assertMatch({ok, _}, hb_ao:resolve(Msg2, <<"Compute">>, #{})).
+    ?assertMatch({ok, _}, hb_ao:resolve(Req, <<"Compute">>, #{})).

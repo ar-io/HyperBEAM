@@ -12,20 +12,20 @@
 %% process ID as the group name.
 group(Base, undefined, Opts) ->
     hb_persistent:default_grouper(Base, undefined, Opts);
-group(Base, Msg2, Opts) ->
+group(Base, Req, Opts) ->
     case hb_opts:get(process_workers, false, Opts) of
         false ->
-            hb_persistent:default_grouper(Base, Msg2, Opts);
+            hb_persistent:default_grouper(Base, Req, Opts);
         true ->
-            case Msg2 of
+            case Req of
                 undefined ->
                     hb_persistent:default_grouper(Base, undefined, Opts);
                 _ ->
-                    case hb_path:matches(<<"compute">>, hb_path:hd(Msg2, Opts)) of
+                    case hb_path:matches(<<"compute">>, hb_path:hd(Req, Opts)) of
                         true ->
                             process_to_group_name(Base, Opts);
                         _ ->
-                            hb_persistent:default_grouper(Base, Msg2, Opts)
+                            hb_persistent:default_grouper(Base, Req, Opts)
                     end
             end
     end.
@@ -51,8 +51,8 @@ server(GroupName, Base, Opts) ->
     Timeout = hb_opts:get(process_worker_max_idle, 300_000, Opts),
     ?event(worker, {waiting_for_req, {group, GroupName}}),
     receive
-        {resolve, Listener, GroupName, Msg2, ListenerOpts} ->
-            TargetSlot = hb_ao:get(<<"slot">>, Msg2, Opts),
+        {resolve, Listener, GroupName, Req, ListenerOpts} ->
+            TargetSlot = hb_ao:get(<<"slot">>, Req, Opts),
             ?event(worker,
                 {work_received,
                     {group, GroupName},
@@ -66,7 +66,7 @@ server(GroupName, Base, Opts) ->
                     #{ <<"path">> => <<"compute">>, <<"slot">> => TargetSlot },
                     hb_maps:merge(ListenerOpts, ServerOpts, Opts)
                 ),
-            ?event(worker, {work_done, {group, GroupName}, {req, Msg2}, {res, Res}}),
+            ?event(worker, {work_done, {group, GroupName}, {req, Req}, {res, Res}}),
             send_notification(Listener, GroupName, TargetSlot, Res),
             server(
                 GroupName,
@@ -92,12 +92,12 @@ server(GroupName, Base, Opts) ->
     end.
 
 %% @doc Await a resolution from a worker executing the `process@1.0' device.
-await(Worker, GroupName, Base, Msg2, Opts) ->
-    case hb_path:matches(<<"compute">>, hb_path:hd(Msg2, Opts)) of
+await(Worker, GroupName, Base, Req, Opts) ->
+    case hb_path:matches(<<"compute">>, hb_path:hd(Req, Opts)) of
         false -> 
-            hb_persistent:default_await(Worker, GroupName, Base, Msg2, Opts);
+            hb_persistent:default_await(Worker, GroupName, Base, Req, Opts);
         true ->
-            TargetSlot = hb_ao:get(<<"slot">>, Msg2, any, Opts),
+            TargetSlot = hb_ao:get(<<"slot">>, Req, any, Opts),
             ?event({awaiting_compute, 
                 {worker, Worker},
                 {group, GroupName},
@@ -118,7 +118,7 @@ await(Worker, GroupName, Base, Msg2, Opts) ->
                         {worker, Worker},
                         {group, GroupName}
                     }),
-                    await(Worker, GroupName, Base, Msg2, Opts);
+                    await(Worker, GroupName, Base, Req, Opts);
                 {'DOWN', _R, process, Worker, _Reason} ->
                     ?event(compute_debug,
                         {leader_died,

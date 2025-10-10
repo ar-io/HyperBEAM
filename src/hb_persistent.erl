@@ -100,9 +100,9 @@ do_monitor(Group, Last, Opts) ->
 
 %% @doc Register the process to lead an execution if none is found, otherwise
 %% signal that we should await resolution.
-find_or_register(Base, Msg2, Opts) ->
-    GroupName = group(Base, Msg2, Opts),
-    find_or_register(GroupName, Base, Msg2, Opts).
+find_or_register(Base, Req, Opts) ->
+    GroupName = group(Base, Req, Opts),
+    find_or_register(GroupName, Base, Req, Opts).
 find_or_register(ungrouped_exec, _Msg1, _Msg2, _Opts) ->
     {leader, ungrouped_exec};
 find_or_register(GroupName, _Msg1, _Msg2, Opts) ->
@@ -125,9 +125,9 @@ find_or_register(GroupName, _Msg1, _Msg2, Opts) ->
 
 %% @doc Unregister as the leader for an execution and notify waiting processes.
 unregister_notify(ungrouped_exec, _Msg2, _Msg3, _Opts) -> ok;
-unregister_notify(GroupName, Msg2, Msg3, Opts) ->
+unregister_notify(GroupName, Req, Msg3, Opts) ->
     unregister_groupname(GroupName, Opts),
-    notify(GroupName, Msg2, Msg3, Opts).
+    notify(GroupName, Req, Msg3, Opts).
 
 %% @doc Find a group with the given name.
 find_execution(Groupname, _Opts) ->
@@ -137,9 +137,9 @@ find_execution(Groupname, _Opts) ->
         Pid -> {ok, Pid}
     end.
 
-%% @doc Calculate the group name for a Base and Msg2 pair. Uses the Base's
+%% @doc Calculate the group name for a Base and Req pair. Uses the Base's
 %% `group' function if it is found in the `info', otherwise uses the default.
-group(Base, Msg2, Opts) ->
+group(Base, Req, Opts) ->
     Grouper =
         hb_maps:get(
             grouper,
@@ -149,7 +149,7 @@ group(Base, Msg2, Opts) ->
         ),
     apply(
         Grouper,
-        hb_ao_device:truncate_args(Grouper, [Base, Msg2, Opts])
+        hb_ao_device:truncate_args(Grouper, [Base, Req, Opts])
     ).
 
 %% @doc Register for performing an AO-Core resolution.
@@ -158,9 +158,9 @@ register_groupname(Groupname, _Opts) ->
     hb_name:register(Groupname).
 
 %% @doc Unregister for being the leader on an AO-Core resolution.
-unregister(Base, Msg2, Opts) ->
+unregister(Base, Req, Opts) ->
     start(),
-    unregister_groupname(group(Base, Msg2, Opts), Opts).
+    unregister_groupname(group(Base, Req, Opts), Opts).
 unregister_groupname(Groupname, _Opts) ->
     ?event({unregister_resolver, {explicit, Groupname}}),
     hb_name:unregister(Groupname).
@@ -168,7 +168,7 @@ unregister_groupname(Groupname, _Opts) ->
 %% @doc If there was already an Erlang process handling this execution,
 %% we should register with them and wait for them to notify us of
 %% completion.
-await(Worker, Base, Msg2, Opts) ->
+await(Worker, Base, Req, Opts) ->
     % Get the device's await function, if it exists.
     AwaitFun =
         hb_maps:get(
@@ -179,18 +179,18 @@ await(Worker, Base, Msg2, Opts) ->
         ),
     % Calculate the compute path that we will wait upon resolution of.
     % Register with the process.
-    GroupName = group(Base, Msg2, Opts),
+    GroupName = group(Base, Req, Opts),
     % set monitor to a worker, so we know if it exits
     _Ref = erlang:monitor(process, Worker),
-    Worker ! {resolve, self(), GroupName, Msg2, Opts},
-    AwaitFun(Worker, GroupName, Base, Msg2, Opts).
+    Worker ! {resolve, self(), GroupName, Req, Opts},
+    AwaitFun(Worker, GroupName, Base, Req, Opts).
 
 %% @doc Default await function that waits for a resolution from a worker.
-default_await(Worker, GroupName, Base, Msg2, Opts) ->
+default_await(Worker, GroupName, Base, Req, Opts) ->
     % Wait for the result.
     receive
-        {resolved, _, GroupName, Msg2, Res} ->
-            worker_event(GroupName, {resolved_await, Res}, Base, Msg2, Opts),
+        {resolved, _, GroupName, Req, Res} ->
+            worker_event(GroupName, {resolved_await, Res}, Base, Req, Opts),
             Res;
         {'DOWN', _R, process, Worker, Reason} ->
             ?event(
@@ -198,7 +198,7 @@ default_await(Worker, GroupName, Base, Msg2, Opts) ->
                     {group, GroupName},
                     {leader, Worker},
                     {reason, Reason},
-                    {request, Msg2}
+                    {request, Req}
                 }
             ),
             {error, leader_died}
@@ -207,8 +207,8 @@ default_await(Worker, GroupName, Base, Msg2, Opts) ->
 %% @doc Check our inbox for processes that are waiting for the resolution
 %% of this execution. Comes in two forms:
 %% 1. Notify on group name alone.
-%% 2. Notify on group name and Msg2.
-notify(GroupName, Msg2, Msg3, Opts) ->
+%% 2. Notify on group name and Req.
+notify(GroupName, Req, Msg3, Opts) ->
     case is_binary(GroupName) of
         true ->
             ?event({notifying_all, {group, GroupName}});
@@ -216,10 +216,10 @@ notify(GroupName, Msg2, Msg3, Opts) ->
             ok
     end,
     receive
-        {resolve, Listener, GroupName, Msg2, _ListenerOpts} ->
+        {resolve, Listener, GroupName, Req, _ListenerOpts} ->
             ?event({notifying_listener, {listener, Listener}, {group, GroupName}}),
-            send_response(Listener, GroupName, Msg2, Msg3),
-            notify(GroupName, Msg2, Msg3, Opts)
+            send_response(Listener, GroupName, Req, Msg3),
+            notify(GroupName, Req, Msg3, Opts)
     after 0 ->
         ?event(finished_notify),
         ok
@@ -249,14 +249,14 @@ forward_work(NewPID, Opts) ->
     ok.
 
 %% @doc Helper function that wraps responding with a new Msg3.
-send_response(Listener, GroupName, Msg2, Msg3) ->
+send_response(Listener, GroupName, Req, Msg3) ->
     ?event(worker,
         {send_response,
             {listener, Listener},
             {group, GroupName}
         }
     ),
-    Listener ! {resolved, self(), GroupName, Msg2, Msg3}.
+    Listener ! {resolved, self(), GroupName, Req, Msg3}.
 
 %% @doc Start a worker process that will hold a message in memory for
 %% future executions.
@@ -317,7 +317,7 @@ default_worker(GroupName, Base, Opts) ->
     Timeout = hb_opts:get(worker_timeout, 10000, Opts),
     worker_event(GroupName, default_worker_waiting_for_req, Base, undefined, Opts),
     receive
-        {resolve, Listener, GroupName, Msg2, ListenerOpts} ->
+        {resolve, Listener, GroupName, Req, ListenerOpts} ->
             ?event(worker,
                 {work_received,
                     {listener, Listener},
@@ -327,11 +327,11 @@ default_worker(GroupName, Base, Opts) ->
             Res =
                 hb_ao:resolve(
                     Base,
-                    Msg2,
+                    Req,
                     hb_maps:merge(ListenerOpts, Opts, Opts)
                 ),
-            send_response(Listener, GroupName, Msg2, Res),
-            notify(GroupName, Msg2, Res, Opts),
+            send_response(Listener, GroupName, Req, Res),
+            notify(GroupName, Req, Res, Opts),
             case hb_opts:get(static_worker, false, Opts) of
                 true ->
                     % Reregister for the existing group name.
@@ -363,9 +363,9 @@ default_worker(GroupName, Base, Opts) ->
         unregister(Base, undefined, Opts)
     end.
 
-%% @doc Create a group name from a Base and Msg2 pair as a tuple.
-default_grouper(Base, Msg2, Opts) ->
-    %?event({calculating_default_group_name, {msg1, Base}, {msg2, Msg2}}),
+%% @doc Create a group name from a Base and Req pair as a tuple.
+default_grouper(Base, Req, Opts) ->
+    %?event({calculating_default_group_name, {msg1, Base}, {msg2, Req}}),
     % Use Erlang's `phash2' to hash the result of the Grouper function.
     % `phash2' is relatively fast and ensures that the group name is short for
     % storage in `pg'. In production we should only use a hash with a larger
@@ -376,18 +376,18 @@ default_grouper(Base, Msg2, Opts) ->
             erlang:phash2(
                 {
                     hb_maps:without([<<"priv">>], Base, Opts),
-                    hb_maps:without([<<"priv">>], Msg2, Opts)
+                    hb_maps:without([<<"priv">>], Req, Opts)
                 }
             );
         _ -> ungrouped_exec
     end.
 
 %% @doc Log an event with the worker process. If we used the default grouper
-%% function, we should also include the Base and Msg2 in the event. If we did not,
+%% function, we should also include the Base and Req in the event. If we did not,
 %% we assume that the group name expresses enough information to identify the
 %% request.
-worker_event(Group, Data, Base, Msg2, Opts) when is_integer(Group) ->
-    ?event(worker, {worker_event, Group, Data, {msg1, Base}, {msg2, Msg2}}, Opts);
+worker_event(Group, Data, Base, Req, Opts) when is_integer(Group) ->
+    ?event(worker, {worker_event, Group, Data, {msg1, Base}, {msg2, Req}}, Opts);
 worker_event(Group, Data, _, _, Opts) ->
     ?event(worker, {worker_event, Group, Data}, Opts).
 
@@ -432,14 +432,14 @@ test_device(Base) ->
             end
     }.
 
-spawn_test_client(Base, Msg2) ->
-    spawn_test_client(Base, Msg2, #{}).
-spawn_test_client(Base, Msg2, Opts) ->
+spawn_test_client(Base, Req) ->
+    spawn_test_client(Base, Req, #{}).
+spawn_test_client(Base, Req, Opts) ->
     Ref = make_ref(),
     TestParent = self(),
     spawn_link(fun() ->
-        ?event({new_concurrent_test_resolver, Ref, {executing, Msg2}}),
-        Res = hb_ao:resolve(Base, Msg2, Opts),
+        ?event({new_concurrent_test_resolver, Ref, {executing, Req}}),
+        Res = hb_ao:resolve(Base, Req, Opts),
         ?event({test_worker_got_result, Ref, {result, Res}}),
         TestParent ! {result, Ref, Res}
     end),
@@ -452,11 +452,11 @@ wait_for_test_result(Ref) ->
 deduplicated_execution_test() ->
     TestTime = 200,
     Base = #{ <<"device">> => test_device() },
-    Msg2 = #{ <<"path">> => <<"slow_key">>, <<"wait">> => TestTime },
+    Req = #{ <<"path">> => <<"slow_key">>, <<"wait">> => TestTime },
     T0 = hb:now(),
-    Ref1 = spawn_test_client(Base, Msg2),
+    Ref1 = spawn_test_client(Base, Req),
     receive after 100 -> ok end,
-    Ref2 = spawn_test_client(Base, Msg2),
+    Ref2 = spawn_test_client(Base, Req),
     Res1 = wait_for_test_result(Ref1),
     Res2 = wait_for_test_result(Ref2),
     T1 = hb:now(),
@@ -471,11 +471,11 @@ persistent_worker_test() ->
     Base = #{ <<"device">> => test_device() },
     link(start_worker(Base, #{ static_worker => true })),
     receive after 10 -> ok end,
-    Msg2 = #{ <<"path">> => <<"slow_key">>, <<"wait">> => TestTime },
+    Req = #{ <<"path">> => <<"slow_key">>, <<"wait">> => TestTime },
     Msg3 = #{ <<"path">> => <<"slow_key">>, <<"wait">> => trunc(TestTime*1.1) },
     Msg4 = #{ <<"path">> => <<"slow_key">>, <<"wait">> => trunc(TestTime*1.2) },
     T0 = hb:now(),
-    Ref1 = spawn_test_client(Base, Msg2),
+    Ref1 = spawn_test_client(Base, Req),
     Ref2 = spawn_test_client(Base, Msg3),
     Ref3 = spawn_test_client(Base, Msg4),
     Res1 = wait_for_test_result(Ref1),
@@ -490,14 +490,14 @@ spawn_after_execution_test() ->
     ?event(<<"">>),
     TestTime = 500,
     Base = #{ <<"device">> => test_device() },
-    Msg2 = #{ <<"path">> => <<"self">>, <<"wait">> => TestTime },
+    Req = #{ <<"path">> => <<"self">>, <<"wait">> => TestTime },
     Msg3 = #{ <<"path">> => <<"slow_key">>, <<"wait">> => trunc(TestTime*1.1) },
     Msg4 = #{ <<"path">> => <<"slow_key">>, <<"wait">> => trunc(TestTime*1.2) },
     T0 = hb:now(),
     Ref1 =
         spawn_test_client(
             Base,
-            Msg2,
+            Req,
             #{
                 spawn_worker => true,
                 static_worker => true,

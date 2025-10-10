@@ -31,22 +31,22 @@
 init(Base, _Msg2, _Opts) -> {ok, Base}.
 normalize(Base, _Msg2, _Opts) -> {ok, Base}.
 snapshot(Base, _Msg2, _Opts) -> {ok, Base}.
-compute(Base, Msg2, Opts) -> patches(Base, Msg2, Opts).
+compute(Base, Req, Opts) -> patches(Base, Req, Opts).
 
 %% @doc Get the value found at the `patch-from' key of the message, or the
 %% `from' key if the former is not present. Remove it from the message and set
 %% the new source to the value found.
-all(Base, Msg2, Opts) ->
-    move(all, Base, Msg2, Opts).
+all(Base, Req, Opts) ->
+    move(all, Base, Req, Opts).
 
 %% @doc Find relevant `PATCH' messages in the given source key of the execution
 %% and request messages, and apply them to the given destination key of the
 %% request.
-patches(Base, Msg2, Opts) ->
-    move(patches, Base, Msg2, Opts).
+patches(Base, Req, Opts) ->
+    move(patches, Base, Req, Opts).
 
 %% @doc Unified executor for the `all' and `patches' modes.
-move(Mode, Base, Msg2, Opts) ->
+move(Mode, Base, Req, Opts) ->
     maybe
         % Find the input paths.
         % For `from' we parse the path to see if it is relative to the request
@@ -55,9 +55,9 @@ move(Mode, Base, Msg2, Opts) ->
         RawPatchFrom =
             hb_ao:get_first(
                 [
-                    {Msg2, <<"patch-from">>},
+                    {Req, <<"patch-from">>},
                     {Base, <<"patch-from">>},
-                    {Msg2, <<"from">>},
+                    {Req, <<"from">>},
                     {Base, <<"from">>}
                 ],
                 <<"/">>,
@@ -70,7 +70,7 @@ move(Mode, Base, Msg2, Opts) ->
                         [<<"base">>, RestKey] ->
                             {Base, [RestKey|RestKeys]};
                         [<<"req">>, RestKey] ->
-                            {Msg2, [RestKey|RestKeys]};
+                            {Req, [RestKey|RestKeys]};
                         _ ->
                             {Base, RawPatchFrom}
                     end;
@@ -87,9 +87,9 @@ move(Mode, Base, Msg2, Opts) ->
         PatchTo =
             hb_ao:get_first(
                 [
-                    {Msg2, <<"patch-to">>},
+                    {Req, <<"patch-to">>},
                     {Base, <<"patch-to">>},
-                    {Msg2, <<"to">>},
+                    {Req, <<"to">>},
                     {Base, <<"to">>}
                 ],
                 <<"/">>,
