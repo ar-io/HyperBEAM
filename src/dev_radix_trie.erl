@@ -25,7 +25,7 @@ get(Key, Trie, Req, Opts) ->
 get(TrieNode, Req, Opts) ->
     case hb_maps:find(<<"key">>, Req, Opts) of
         error -> {error, <<"'key' parameter is required for trie lookup.">>};
-        {ok, Key} -> retrieve(TrieNode, Key)
+        {ok, Key} -> retrieve(TrieNode, Key, Opts)
     end.
 
 %% @doc Set keys and their values in the trie.
@@ -50,14 +50,14 @@ do_set(Trie, [], Opts) ->
     ),
     hb_message:commit(WithoutHMac, Opts, #{<<"type">> => <<"unsigned">>});
 do_set(Trie, [{Key, Val} | KeyVals], Opts) ->
-    NewTrie = insert(Trie, Key, Val),
+    NewTrie = insert(Trie, Key, Val, Opts),
     do_set(NewTrie, KeyVals, Opts).
 
-insert(TrieNode, Key, Val) -> 
-    insert(TrieNode, Key, Val, 0).
-insert(TrieNode, Key, Val, KeyPrefixSizeAcc) ->
+insert(TrieNode, Key, Val, Opts) ->
+    insert(TrieNode, Key, Val, Opts, 0).
+insert(TrieNode, Key, Val, Opts, KeyPrefixSizeAcc) ->
     <<_KeyPrefix:KeyPrefixSizeAcc/bitstring, KeySuffix/bitstring>> = Key,
-    EdgeLabels = edges(TrieNode),
+    EdgeLabels = edges(TrieNode, Opts),
     ChunkSize = round(math:log2(?RADIX)),
     case longest_prefix_match(KeySuffix, EdgeLabels, ChunkSize) of
         {EdgeLabel, MatchSize} when MatchSize =:= 0 ->
@@ -68,12 +68,12 @@ insert(TrieNode, Key, Val, KeyPrefixSizeAcc) ->
                     TrieNode#{<<"node-value">> => Val}
             end;
         {EdgeLabel, MatchSize} when MatchSize =:= bit_size(EdgeLabel) ->
-            SubTrie = hb_maps:get(EdgeLabel, TrieNode),
-            NewSubTrie = insert(SubTrie, Key, Val, bit_size(EdgeLabel) + KeyPrefixSizeAcc),
+            SubTrie = hb_maps:get(EdgeLabel, TrieNode, Opts),
+            NewSubTrie = insert(SubTrie, Key, Val, Opts, bit_size(EdgeLabel) + KeyPrefixSizeAcc),
             TrieNode#{EdgeLabel => NewSubTrie};
         {EdgeLabel, MatchSize} ->
-            SubTrie = hb_maps:get(EdgeLabel, TrieNode),
-            NewTrie = hb_maps:remove(EdgeLabel, TrieNode),
+            SubTrie = hb_maps:get(EdgeLabel, TrieNode, Opts),
+            NewTrie = hb_maps:remove(EdgeLabel, TrieNode, Opts),
             <<EdgeLabelPrefix:MatchSize/bitstring, EdgeLabelSuffix/bitstring>> = EdgeLabel,
             <<_KeySuffixPrefix:MatchSize/bitstring, KeySuffixSuffix/bitstring>> = KeySuffix,
             case bit_size(KeySuffixSuffix) > 0 of
@@ -94,30 +94,30 @@ insert(TrieNode, Key, Val, KeyPrefixSizeAcc) ->
             end
     end.
 
-retrieve(TrieNode, Key) ->
-    retrieve(TrieNode, Key, 0).
-retrieve(TrieNode, Key, KeyPrefixSizeAcc) ->
+retrieve(TrieNode, Key, Opts) ->
+    retrieve(TrieNode, Key, Opts, 0).
+retrieve(TrieNode, Key, Opts, KeyPrefixSizeAcc) ->
     case KeyPrefixSizeAcc >= bit_size(Key) of
         true ->
-            hb_maps:get(<<"node-value">>, TrieNode, {error, not_found});
+            hb_maps:get(<<"node-value">>, TrieNode, {error, not_found}, Opts);
         false ->
-            EdgeLabels = edges(TrieNode),
+            EdgeLabels = edges(TrieNode, Opts),
             <<_KeyPrefix:KeyPrefixSizeAcc/bitstring, KeySuffix/bitstring>> = Key,
             ChunkSize = round(math:log2(?RADIX)),
             case longest_prefix_match(KeySuffix, EdgeLabels, ChunkSize) of
                 {_EdgeLabel, MatchSize} when MatchSize =:= 0 ->
                     {error, not_found};
                 {EdgeLabel, MatchSize} when MatchSize =:= bit_size(EdgeLabel) ->
-                    SubTrie = hb_maps:get(EdgeLabel, TrieNode),
-                    retrieve(SubTrie, Key, bit_size(EdgeLabel) + KeyPrefixSizeAcc);
+                    SubTrie = hb_maps:get(EdgeLabel, TrieNode, Opts),
+                    retrieve(SubTrie, Key, Opts, bit_size(EdgeLabel) + KeyPrefixSizeAcc);
                 _ -> {error, not_found}
             end
     end.
 
 % Get a list of edge labels for a given trie node.
 % TODO: filter out system keys?
-edges(TrieNode) -> 
-  Filtered = hb_maps:without([<<"node-value">>], TrieNode),
+edges(TrieNode, Opts) ->
+  Filtered = hb_maps:without([<<"node-value">>], TrieNode, Opts),
   hb_maps:keys(Filtered).
 
 % Compute the longest common binary prefix of A and B, comparing chunks of N bits.
