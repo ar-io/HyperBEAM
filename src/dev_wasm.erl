@@ -332,7 +332,7 @@ import(Base, Req, Opts) ->
             #{ StatePath => Base },
             Opts#{ hashpath => ignore }
         ),
-    ?event({state_added_msg1, AdjustedBase, AdjustedReq}),
+    ?event({state_added_base, AdjustedBase, AdjustedReq}),
     % 3. Resolve the adjusted path against the added state.
     case hb_ao:resolve(AdjustedBase, AdjustedReq, Opts) of
         {ok, Res} ->

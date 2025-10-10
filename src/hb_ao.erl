@@ -644,7 +644,7 @@ resolve_stage(9, Base, Req, {ok, Res}, ExecName, Opts) when is_map(Res) ->
     );
 resolve_stage(9, Base, Req, {Status, Res}, ExecName, Opts) when is_map(Res) ->
     ?event(ao_core, {stage, 9, ExecName, abnormal_status_reset_hashpath}, Opts),
-    ?event(hashpath, {resetting_hashpath_msg3, {base, Base}, {req, Req}, {opts, Opts}}),
+    ?event(hashpath, {resetting_hashpath_res, {base, Base}, {req, Req}, {opts, Opts}}),
     % Skip cryptographic linking and reset the hashpath if the result is abnormal.
     Priv = hb_private:from_message(Res),
     resolve_stage(

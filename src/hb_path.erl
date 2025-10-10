@@ -150,7 +150,7 @@ hashpath(Base, Req, HashpathAlg, Opts) when is_map(Req) ->
             hashpath(Base, hb_util:human_id(ReqID), HashpathAlg, Opts)
     end;
 hashpath(BaseHashpath, HumanReqID, HashpathAlg, Opts) ->
-    ?event({hashpath, {msg1hp, {explicit, BaseHashpath}}, {msg2id, {explicit, HumanReqID}}}),
+    ?event({hashpath, {basehp, {explicit, BaseHashpath}}, {reqid, {explicit, HumanReqID}}}),
     HP = 
         case term_to_path_parts(BaseHashpath, Opts) of
             [_] ->
@@ -170,7 +170,7 @@ hashpath(BaseHashpath, HumanReqID, HashpathAlg, Opts) ->
                 HumanNewBase = hb_util:human_id(NativeNewBase),
                 << HumanNewBase/binary, "/", HumanReqID/binary >>
         end,
-    ?event({generated_hashpath, HP, {msg1hp, BaseHashpath}, {msg2id, HumanReqID}}),
+    ?event({generated_hashpath, HP, {basehp, BaseHashpath}, {reqid, HumanReqID}}),
     HP.
 
 %%% @doc Get the hashpath function for a message from its HashPath-Alg.
@@ -335,7 +335,7 @@ hashpath_test() ->
     Hashpath = hashpath(Base, Req, #{}),
     ?assert(is_binary(Hashpath) andalso byte_size(Hashpath) == 87).
 
-hashpath_direct_msg2_test() ->
+hashpath_direct_req_test() ->
     Base = #{ <<"base">> => <<"message">> },
     Req = #{ <<"path">> => <<"base">> },
     Hashpath = hashpath(Base, Req, #{}),
