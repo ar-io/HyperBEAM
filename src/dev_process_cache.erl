@@ -66,12 +66,22 @@ path(ProcID, Ref, PathSuffix, Opts) ->
 latest(ProcID, Opts) -> latest(ProcID, [], Opts).
 latest(ProcID, RequiredPath, Opts) ->
     latest(ProcID, RequiredPath, undefined, Opts).
-latest(ProcID, RawRequiredPath, Limit, Opts) ->
+latest(ProcID, RawRequiredPath, Limit, RawOpts) ->
+    Scope = hb_opts:get(process_cache_scope, undefined, RawOpts),
+    Opts =
+        RawOpts#{
+            store =>
+                hb_store:scope(
+                    hb_opts:get(store, no_viable_store, RawOpts),
+                    Scope
+                )
+        },
     ?event(
         {latest_called,
             {proc_id, ProcID},
             {required_path, RawRequiredPath},
-            {limit, Limit}
+            {limit, Limit},
+            {scope, Scope}
         }
     ),
     % Convert the required path to a list of _binary_ keys.
