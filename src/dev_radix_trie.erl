@@ -1,11 +1,11 @@
 %%% @doc Implements a radix trie.
 %%%
 %%% Recall that r = 2 ^ x, so a radix-256 trie compares bits in chunks of 8 and thus each
-%%% internal node can have at most 8 children; a radix-2 trie compares bits in chunks of 1
+%%% internal node can have at most 256 children; a radix-2 trie compares bits in chunks of 1
 %%% and thus each internal node can have at most 2 children. (The number of children are
 %%% defined by the number of permutations given by an N-bit chunk comparison -- e.g., a
 %%% 2-bit comparison yields paths {00, 11, 01, 10}, which is why each node in a radix-4
-%%% trie can have at most 4 children!) A radix-256 trie is thus equivalent to bytewise comparison.
+%%% trie can have at most 4 children!)
 -module(dev_radix_trie).
 -export([info/0, set/3, get/3, get/4]).
 -include_lib("eunit/include/eunit.hrl").
@@ -29,8 +29,6 @@ get(TrieNode, Req, Opts) ->
     end.
 
 %% @doc Set keys and their values in the trie.
-%% TODO: override default radix with a 'radix' key
-%% TODO: this might be optimizable by lexicographically sorting the Req ahead of time?
 set(Trie, Req, Opts) ->
     Insertable = hb_maps:without([<<"path">>], Req, Opts),
     KeyVals = hb_maps:to_list(Insertable, Opts),
