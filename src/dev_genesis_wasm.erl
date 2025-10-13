@@ -229,7 +229,7 @@ ensure_started(Opts) ->
                                                 hb_util:list(
                                                     hb_opts:get(
                                                         genesis_wasm_memory_cache_max_size,
-                                                        17179869184, %% 16GB
+                                                        "17179869184", %% 16GB
                                                         Opts
                                                     )
                                                 )
@@ -461,7 +461,7 @@ status(Opts) ->
                 Opts
             )
         ),
-    try hb_http:get(<<"http://localhost:", ServerPort/binary, "/status">>, Opts) of
+    try hb_http:get(<<"http://localhost:", ServerPort/binary, "/">>, Opts) of
         {ok, Res} ->
             ?event({genesis_wasm_status_check, {res, Res}}),
             true;
