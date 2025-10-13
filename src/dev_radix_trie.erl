@@ -113,9 +113,18 @@ retrieve(TrieNode, Key, Opts, KeyPrefixSizeAcc) ->
     end.
 
 % Get a list of edge labels for a given trie node.
-% TODO: filter out system keys?
 edges(TrieNode, Opts) ->
-  Filtered = hb_maps:without([<<"node-value">>, <<"device">>, <<"commitments">>], TrieNode, Opts),
+  Filtered = hb_maps:without(
+      [
+          <<"node-value">>,
+          <<"device">>,
+          <<"commitments">>,
+          <<"priv">>,
+          <<"hashpath">>
+      ],
+      TrieNode,
+      Opts
+  ),
   hb_maps:keys(Filtered).
 
 % Compute the longest common binary prefix of A and B, comparing chunks of N bits.
