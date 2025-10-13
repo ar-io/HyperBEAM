@@ -66,11 +66,11 @@ insert(TrieNode, Key, Val, Opts, KeyPrefixSizeAcc) ->
                     TrieNode#{<<"node-value">> => Val}
             end;
         {EdgeLabel, MatchSize} when MatchSize =:= bit_size(EdgeLabel) ->
-            SubTrie = hb_maps:get(EdgeLabel, TrieNode, Opts),
+            SubTrie = hb_maps:get(EdgeLabel, TrieNode, undefined, Opts),
             NewSubTrie = insert(SubTrie, Key, Val, Opts, bit_size(EdgeLabel) + KeyPrefixSizeAcc),
             TrieNode#{EdgeLabel => NewSubTrie};
         {EdgeLabel, MatchSize} ->
-            SubTrie = hb_maps:get(EdgeLabel, TrieNode, Opts),
+            SubTrie = hb_maps:get(EdgeLabel, TrieNode, undefined, Opts),
             NewTrie = hb_maps:remove(EdgeLabel, TrieNode, Opts),
             <<EdgeLabelPrefix:MatchSize/bitstring, EdgeLabelSuffix/bitstring>> = EdgeLabel,
             <<_KeySuffixPrefix:MatchSize/bitstring, KeySuffixSuffix/bitstring>> = KeySuffix,
@@ -106,7 +106,7 @@ retrieve(TrieNode, Key, Opts, KeyPrefixSizeAcc) ->
                 {_EdgeLabel, MatchSize} when MatchSize =:= 0 ->
                     {error, not_found};
                 {EdgeLabel, MatchSize} when MatchSize =:= bit_size(EdgeLabel) ->
-                    SubTrie = hb_maps:get(EdgeLabel, TrieNode, Opts),
+                    SubTrie = hb_maps:get(EdgeLabel, TrieNode, undefined, Opts),
                     retrieve(SubTrie, Key, Opts, bit_size(EdgeLabel) + KeyPrefixSizeAcc);
                 _ -> {error, not_found}
             end
@@ -115,7 +115,7 @@ retrieve(TrieNode, Key, Opts, KeyPrefixSizeAcc) ->
 % Get a list of edge labels for a given trie node.
 % TODO: filter out system keys?
 edges(TrieNode, Opts) ->
-  Filtered = hb_maps:without([<<"node-value">>], TrieNode, Opts),
+  Filtered = hb_maps:without([<<"node-value">>, <<"device">>, <<"commitments">>], TrieNode, Opts),
   hb_maps:keys(Filtered).
 
 % Compute the longest common binary prefix of A and B, comparing chunks of N bits.
