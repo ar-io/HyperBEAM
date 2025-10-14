@@ -1,5 +1,10 @@
 %%% @doc Implements a radix trie.
 %%%
+%%% This implementation features an optimization which reduces the total number of messages
+%%% required to represent the trie by collapsing leaf nodes into their parent messages --
+%%% i.e., "implicit" leaf nodes. This requires some special case handling during insertion
+%%% and retrieval, but it can reduce the total number of messages by more than half.
+%%%
 %%% Recall that r = 2 ^ x, so a radix-256 trie compares bits in chunks of 8 and thus each
 %%% internal node can have at most 256 children; a radix-2 trie compares bits in chunks of 1
 %%% and thus each internal node can have at most 2 children. (The number of children are
@@ -61,14 +66,27 @@ insert(TrieNode, Key, Val, Opts, KeyPrefixSizeAcc) ->
         {EdgeLabel, MatchSize} when MatchSize =:= 0 ->
             case bit_size(KeySuffix) > 0 of
                 true ->
-                    TrieNode#{KeySuffix => #{<<"node-value">> => Val}};
+                    % Implicit leaf node!
+                    TrieNode#{KeySuffix => Val};
                 false ->
                     TrieNode#{<<"node-value">> => Val}
             end;
         {EdgeLabel, MatchSize} when MatchSize =:= bit_size(EdgeLabel) ->
             SubTrie = hb_maps:get(EdgeLabel, TrieNode, undefined, Opts),
-            NewSubTrie = insert(SubTrie, Key, Val, Opts, bit_size(EdgeLabel) + KeyPrefixSizeAcc),
-            TrieNode#{EdgeLabel => NewSubTrie};
+            % Special case handling for implicit leaf nodes
+            case is_map(SubTrie) of
+                false ->
+                    if
+                        bit_size(KeySuffix) =:= bit_size(EdgeLabel) ->
+                            TrieNode#{EdgeLabel => Val};
+                        true ->
+                            <<_KeySuffixPrefix:MatchSize/bitstring, KeySuffixSuffix/bitstring>> = KeySuffix,
+                            TrieNode#{EdgeLabel => #{<<"node-value">> => SubTrie, KeySuffixSuffix => Val}}
+                    end;
+                true ->
+                    NewSubTrie = insert(SubTrie, Key, Val, Opts, bit_size(EdgeLabel) + KeyPrefixSizeAcc),
+                    TrieNode#{EdgeLabel => NewSubTrie}
+            end;
         {EdgeLabel, MatchSize} ->
             SubTrie = hb_maps:get(EdgeLabel, TrieNode, undefined, Opts),
             NewTrie = hb_maps:remove(EdgeLabel, TrieNode, Opts),
@@ -79,7 +97,8 @@ insert(TrieNode, Key, Val, Opts, KeyPrefixSizeAcc) ->
                     NewTrie#{
                         EdgeLabelPrefix => #{
                             EdgeLabelSuffix => SubTrie,
-                            KeySuffixSuffix => #{<<"node-value">> => Val}
+                            % Implicit leaf node!
+                            KeySuffixSuffix => Val
                         }
                     };
                 false ->
@@ -107,12 +126,30 @@ retrieve(TrieNode, Key, Opts, KeyPrefixSizeAcc) ->
                     {error, not_found};
                 {EdgeLabel, MatchSize} when MatchSize =:= bit_size(EdgeLabel) ->
                     SubTrie = hb_maps:get(EdgeLabel, TrieNode, undefined, Opts),
-                    retrieve(SubTrie, Key, Opts, bit_size(EdgeLabel) + KeyPrefixSizeAcc);
+                    % Special case handling for implicit leaf nodes: if the
+                    % child node corresponding to the edge label is not a map, and
+                    % the edge label is *precisely* the same size as the remaining
+                    % key suffix, then SubTrie is an implicit leaf node -- i.e.,
+                    % it's the value associated with the key we're searching for.
+                    % When the edge label is not the same size as the remaining key
+                    % suffix, that indicates a search for a nonexistent key with
+                    % a partial prefix match on an implicit leaf node -- i.e.,
+                    % if "car" is an implicit leaf node but we searched for "card".
+                    case is_map(SubTrie) of
+                        false ->
+                            if
+                                bit_size(KeySuffix) =:= bit_size(EdgeLabel) -> SubTrie;
+                                true -> {error, not_found}
+                            end;
+                        true ->
+                            retrieve(SubTrie, Key, Opts, bit_size(EdgeLabel) + KeyPrefixSizeAcc)
+                    end;
                 _ -> {error, not_found}
             end
     end.
 
 % Get a list of edge labels for a given trie node.
+edges(TrieNode, Opts) when not is_map(TrieNode) -> [];
 edges(TrieNode, Opts) ->
     Filtered = hb_maps:without(
         [
