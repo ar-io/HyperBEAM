@@ -16,7 +16,9 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
-%%% @doc What default radix shall we use for the data structure?
+%%% @doc What default radix shall we use for the data structure? Setting this to a value
+%%% other than 256 will result in undefined behavior. Sub-byte chunking for divisors of 8
+%%% (radix-2, radix-4, radix-16) seems to work, but cannot be properly normalized.
 -define(RADIX, 256).
 
 info() ->
@@ -63,17 +65,35 @@ insert(TrieNode, Key, Val, Opts, KeyPrefixSizeAcc) ->
     EdgeLabels = edges(TrieNode, Opts),
     ChunkSize = round(math:log2(?RADIX)),
     case longest_prefix_match(KeySuffix, EdgeLabels, ChunkSize) of
+        % NO MATCH: This internal node has no traversible children, because its
+        % edge labels do not match any portion of what remains to be matched of our
+        % key. If we've matched the entire length of our key on our way here, then it
+        % seems we're trying to insert a key which corresponds to the terminal value kept
+        % at this very internal node, so we insert it here. If not, we add an edge to a
+        % new leaf node that's labeled with the remaining key suffix, and we insert our
+        % value into that leaf node. Note the implicit leaf node! In a world with explicit
+        % leaf nodes, it would look like: TrieNode#{KeySuffix => #{<<"node-value">> => Val}
         {EdgeLabel, MatchSize} when MatchSize =:= 0 ->
             case bit_size(KeySuffix) > 0 of
                 true ->
-                    % Implicit leaf node!
+                    % Implicit leaf node creation!
                     TrieNode#{KeySuffix => Val};
                 false ->
                     TrieNode#{<<"node-value">> => Val}
             end;
+        % FULL MATCH: There is a child of this node with an edge label that completely
+        % matches *some portion* of what remains to be matched in our key. If the child
+        % is a normal node, this is the straightforward recursive case -- we simply traverse
+        % to that child and continue. But if the child is an implicit leaf node, we've
+        % reached a base case: if the edge label to the implicit leaf node is exactly
+        % the same size as the remaining key suffix, then we've effectively discovered
+        % that the key we're trying to insert already exists, and its value is kept
+        % in an implicit leaf node, so we simply update it. If the edge label *isn't*
+        % the same size, we must transform the implicit leaf node into an internal node
+        % which marks the terminal value for its key, and add to it an edge
+        % representing the remaining key suffix which maps to a new implicit leaf node.
         {EdgeLabel, MatchSize} when MatchSize =:= bit_size(EdgeLabel) ->
             SubTrie = hb_maps:get(EdgeLabel, TrieNode, undefined, Opts),
-            % Special case handling for implicit leaf nodes
             case is_map(SubTrie) of
                 false ->
                     if
@@ -87,6 +107,11 @@ insert(TrieNode, Key, Val, Opts, KeyPrefixSizeAcc) ->
                     NewSubTrie = insert(SubTrie, Key, Val, Opts, bit_size(EdgeLabel) + KeyPrefixSizeAcc),
                     TrieNode#{EdgeLabel => NewSubTrie}
             end;
+        % PARTIAL MATCH: There is a child of this node with an edge label that partially
+        % matches *some portion* of what remains to be matched in our key. This is the
+        % node splitting case. We detach the subtrie rooted at the child, transform its
+        % dangling edge label into the common portion of the edge label and what remains
+        % to be matched in our key, and reattach the new subtrie under a new child.
         {EdgeLabel, MatchSize} ->
             SubTrie = hb_maps:get(EdgeLabel, TrieNode, undefined, Opts),
             NewTrie = hb_maps:remove(EdgeLabel, TrieNode, Opts),
