@@ -212,4 +212,177 @@ longest_prefix_match({BestLabel, BestSize}, Key, [EdgeLabel | EdgeLabels], N) ->
             longest_prefix_match({BestLabel, BestSize}, Key, EdgeLabels, N)
     end.
 
-% TODO: tests!
+%%% Tests
+
+count_nodes(TrieNode, Opts) when not is_map(TrieNode) -> 0;
+count_nodes(TrieNode, Opts) ->
+    EdgeLabels = edges(TrieNode, Opts),
+    CountsChildren =
+        [
+            count_nodes(hb_maps:get(EdgeLabel, TrieNode, undefined, Opts), Opts)
+        ||
+            EdgeLabel <- EdgeLabels
+        ],
+    1 + lists:sum(CountsChildren).
+
+verify_nodes(TrieNode, Opts) when not is_map(TrieNode) -> true;
+verify_nodes(TrieNode, Opts) ->
+    ThisNode = hb_message:verify(TrieNode),
+    EdgeLabels = edges(TrieNode, Opts),
+    ChildResults =
+        [
+            verify_nodes(hb_maps:get(EdgeLabel, TrieNode, undefined, Opts), Opts)
+        ||
+            EdgeLabel <- EdgeLabels
+        ],
+    lists:all(fun(X) -> X =:= true end, [ThisNode] ++ ChildResults).
+
+node_count_forwards_test() ->
+    Trie = hb_ao:set(
+        #{<<"device">> => <<"radix-trie@1.0">>},
+        #{
+            <<"car">> => 31337,
+            <<"card">> => 90210,
+            <<"cardano">> => 666,
+            <<"carmex">> => 8675309,
+            <<"camshaft">> => 777,
+            <<"zebra">> => 0
+         },
+         #{}
+    ),
+    ?assertEqual(
+        4,
+        count_nodes(Trie, #{})
+    ).
+
+node_count_backwards_test() ->
+    Trie = hb_ao:set(
+        #{<<"device">> => <<"radix-trie@1.0">>},
+        #{
+            <<"zebra">> => 0,
+            <<"camshaft">> => 777,
+            <<"carmex">> => 8675309,
+            <<"cardano">> => 666,
+            <<"card">> => 90210,
+            <<"car">> => 31337
+         },
+         #{}
+    ),
+    ?assertEqual(
+        4,
+        count_nodes(Trie, #{})
+    ).
+
+basic_topology_backwards_test() ->
+    Trie = hb_ao:set(
+        #{<<"device">> => <<"radix-trie@1.0">>},
+        #{
+            <<"zebra">> => 0,
+            <<"camshaft">> => 777,
+            <<"carmex">> => 8675309,
+            <<"cardano">> => 666,
+            <<"card">> => 90210,
+            <<"car">> => 31337
+         },
+         #{}
+    ),
+    ?assert(
+        hb_message:match(
+            #{
+                <<"zebra">> => 0,
+                <<"ca">> => #{
+                    <<"mshaft">> => 777,
+                    <<"r">> => #{
+                        <<"node-value">> => 31337,
+                        <<"mex">> => 8675309,
+                        <<"d">> => #{
+                            <<"node-value">> => 90210,
+                            <<"ano">> => 666
+                        }
+                    }
+                }
+            },
+            Trie,
+            primary
+       )
+    ).
+
+basic_topology_forwards_test() ->
+    Trie = hb_ao:set(
+        #{<<"device">> => <<"radix-trie@1.0">>},
+        #{
+            <<"car">> => 31337,
+            <<"card">> => 90210,
+            <<"cardano">> => 666,
+            <<"carmex">> => 8675309,
+            <<"camshaft">> => 777,
+            <<"zebra">> => 0
+         },
+         #{}
+    ),
+    ?assert(
+        hb_message:match(
+            #{
+                <<"zebra">> => 0,
+                <<"ca">> => #{
+                    <<"mshaft">> => 777,
+                    <<"r">> => #{
+                        <<"node-value">> => 31337,
+                        <<"mex">> => 8675309,
+                        <<"d">> => #{
+                            <<"node-value">> => 90210,
+                            <<"ano">> => 666
+                        }
+                    }
+                }
+            },
+            Trie,
+            primary
+       )
+    ).
+
+basic_retrievability_test() ->
+    Trie = hb_ao:set(
+        #{<<"device">> => <<"radix-trie@1.0">>},
+        #{
+            <<"car">> => 31337,
+            <<"card">> => 90210,
+            <<"cardano">> => 666,
+            <<"carmex">> => 8675309,
+            <<"camshaft">> => 777,
+            <<"zebra">> => 0
+         },
+         #{}
+    ),
+    ?assertEqual(31337, hb_ao:get(<<"car">>, Trie, #{})),
+    ?assertEqual(90210, hb_ao:get(<<"card">>, Trie, #{})),
+    ?assertEqual(666, hb_ao:get(<<"cardano">>, Trie, #{})),
+    ?assertEqual(8675309, hb_ao:get(<<"carmex">>, Trie, #{})),
+    ?assertEqual(777, hb_ao:get(<<"camshaft">>, Trie, #{})),
+    ?assertEqual(0, hb_ao:get(<<"zebra">>, Trie, #{})),
+    ?assertEqual(not_found, hb_ao:get(<<"cardd">>, Trie, #{})),
+    ?assertEqual(not_found, hb_ao:get(<<"ca">>, Trie, #{})),
+    ?assertEqual(not_found, hb_ao:get(<<"c">>, Trie, #{})),
+    ?assertEqual(not_found, hb_ao:get(<<"zebraa">>, Trie, #{})),
+    ?assertEqual(not_found, hb_ao:get(<<"z">>, Trie, #{})),
+    ?assertEqual(not_found, hb_ao:get(<<"cardan">>, Trie, #{})),
+    ?assertEqual(not_found, hb_ao:get(<<"cardana">>, Trie, #{})),
+    ?assertEqual(not_found, hb_ao:get(<<"carm">>, Trie, #{})).
+
+verify_test() ->
+    Trie = hb_ao:set(
+        #{<<"device">> => <<"radix-trie@1.0">>},
+        #{
+            <<"car">> => 31337,
+            <<"card">> => 90210,
+            <<"cardano">> => 666,
+            <<"carmex">> => 8675309,
+            <<"camshaft">> => 777,
+            <<"zebra">> => 0
+         },
+         #{}
+    ),
+    ?assert(verify_nodes(Trie, #{})).
+
+% TODO: test the 3 insertion cases and subcases -- no match, full match, partial matcha
+% TODO: rigorously test updates to existing keys
