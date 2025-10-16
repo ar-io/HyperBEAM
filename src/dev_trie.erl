@@ -1,24 +1,27 @@
 %%% @doc Implements a radix trie.
 %%%
-%%% This implementation features an optimization which reduces the total number of messages
-%%% required to represent the trie by collapsing leaf nodes into their parent messages --
-%%% i.e., "implicit" leaf nodes. This requires some special case handling during insertion
-%%% and retrieval, but it can reduce the total number of messages by more than half.
+%%% This implementation features an optimization which reduces the total number
+%%% of messages required to represent the trie by collapsing leaf nodes into
+%%% their parent messages -- i.e., "implicit" leaf nodes. This requires some
+%%% special case handling during insertion and retrieval, but it can reduce the
+%%% total number of messages by more than half.
 %%%
-%%% Recall that r = 2 ^ x, so a radix-256 trie compares bits in chunks of 8 and thus each
-%%% internal node can have at most 256 children; a radix-2 trie compares bits in chunks of 1
-%%% and thus each internal node can have at most 2 children. (The number of children are
-%%% defined by the number of permutations given by an N-bit chunk comparison -- e.g., a
-%%% 2-bit comparison yields paths {00, 11, 01, 10}, which is why each node in a radix-4
-%%% trie can have at most 4 children!)
+%%% Recall that r = 2 ^ x, so a radix-256 trie compares bits in chunks of 8 and
+%%% thus each internal node can have at most 256 children; a radix-2 trie compares
+%%% bits in chunks of 1 and thus each internal node can have at most 2 children.
+%%% (The number of children are defined by the number of permutations given by an
+%%% N-bit chunk comparison -- e.g., a 2-bit comparison yields paths
+%%% `{00, 11, 01, 10}`, which is why each node in a radix-4 trie can have at-most
+%%% 4 children!)
 -module(dev_trie).
 -export([info/0, set/3, get/3, get/4]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
-%%% @doc What default radix shall we use for the data structure? Setting this to a value
-%%% other than 256 will result in undefined behavior. Sub-byte chunking for divisors of 8
-%%% (radix-2, radix-4, radix-16) seems to work, but cannot be properly normalized.
+%%% @doc What default radix shall we use for the data structure? Setting this to
+%%% a value other than 256 will result in undefined behavior.
+%%% Sub-byte chunking for divisors of 8 (radix-2, radix-4, radix-16) seems to work,
+%%% but cannot be properly normalized.
 -define(RADIX, 256).
 
 info() ->
@@ -26,7 +29,8 @@ info() ->
         default => fun get/4
      }.
 
-%% @doc Get the value associated with a key from a trie represented in a base message.
+%% @doc Get the value associated with a key from a trie represented in a base
+%% message.
 get(Key, Trie, Req, Opts) ->
     get(Trie, Req#{<<"key">> => Key}, Opts).
 get(TrieNode, Req, Opts) ->
@@ -66,13 +70,14 @@ insert(TrieNode, Key, Val, Opts, KeyPrefixSizeAcc) ->
     ChunkSize = round(math:log2(?RADIX)),
     case longest_prefix_match(KeySuffix, EdgeLabels, ChunkSize) of
         % NO MATCH: This internal node has no traversible children, because its
-        % edge labels do not match any portion of what remains to be matched of our
-        % key. If we've matched the entire length of our key on our way here, then it
-        % seems we're trying to insert a key which corresponds to the terminal value kept
-        % at this very internal node, so we insert it here. If not, we add an edge to a
-        % new leaf node that's labeled with the remaining key suffix, and we insert our
-        % value into that leaf node. Note the implicit leaf node! In a world with explicit
-        % leaf nodes, it would look like: TrieNode#{KeySuffix => #{<<"node-value">> => Val}
+        % edge labels do not match any portion of what remains to be matched of
+        % our key. If we've matched the entire length of our key on our way here,
+        % then it seems we're trying to insert a key which corresponds to the
+        % value kept at this very internal node, so we insert it here.
+        % If not, we add an edge to a new leaf node that's labeled with the remaining
+        % key suffix, and we insert our value into that leaf node. Note the implicit
+        % leaf node! In a world with explicit leaf nodes, it would look like:
+        % TrieNode#{KeySuffix => #{<<"node-value">> => Val}}
         {EdgeLabel, MatchSize} when MatchSize =:= 0 ->
             case bit_size(KeySuffix) > 0 of
                 true ->
@@ -100,8 +105,17 @@ insert(TrieNode, Key, Val, Opts, KeyPrefixSizeAcc) ->
                         bit_size(KeySuffix) =:= bit_size(EdgeLabel) ->
                             TrieNode#{EdgeLabel => Val};
                         true ->
-                            <<_KeySuffixPrefix:MatchSize/bitstring, KeySuffixSuffix/bitstring>> = KeySuffix,
-                            TrieNode#{EdgeLabel => #{<<"node-value">> => SubTrie, KeySuffixSuffix => Val}}
+                            <<
+                                _KeySuffixPrefix:MatchSize/bitstring,
+                                KeySuffixSuffix/bitstring
+                            >> = KeySuffix,
+                            TrieNode#{
+                                EdgeLabel =>
+                                    #{
+                                        <<"node-value">> => SubTrie,
+                                        KeySuffixSuffix => Val
+                                    }
+                                }
                     end;
                 true ->
                     NewSubTrie = insert(SubTrie, Key, Val, Opts, bit_size(EdgeLabel) + KeyPrefixSizeAcc),
