@@ -19,7 +19,7 @@
     <<"path">>,
     <<"query">>,
     <<"query-param">>
-    % <<"status">> % Some libraries does not support it
+    % <<"status">> % Some libraries do not support it
 ]).
 
 %% @doc Generate a `signature' and `signature-input' key pair from a commitment
@@ -327,8 +327,12 @@ to_siginfo_keys(Msg, Commitment, Opts) ->
 %%    contain the `body' key itself.
 %% 4. If the `content-type' starts with `multipart/', we remove it.
 from_siginfo_keys(HTTPEncMsg, BodyKeys, SigInfoCommitted) ->
-    % 1. Remove specifiers from the list.
-    BaseCommitted = remove_derived_specifiers(SigInfoCommitted),
+    % 1. Remove specifiers from the list and decode percent-encoded keys.
+    BaseCommitted =
+        lists:map(
+            fun hb_escape:decode/1,
+            remove_derived_specifiers(SigInfoCommitted)
+        ),
     % 2. Replace the `content-digest' key with the `body' key, if present.
     WithBody =
         hb_util:list_replace(BaseCommitted, <<"content-digest">>, BodyKeys),
@@ -350,9 +354,7 @@ from_siginfo_keys(HTTPEncMsg, BodyKeys, SigInfoCommitted) ->
                         <<"body">>,
                         maps:get(<<"ao-body-key">>, HTTPEncMsg)
                     ),
-                ?event(
-                    {with_orig_body_key, WithOrigBodyKey}
-                ),
+                ?event({with_orig_body_key, WithOrigBodyKey}),
                 WithOrigBodyKey -- [<<"ao-body-key">>];
             false ->
                 WithBody

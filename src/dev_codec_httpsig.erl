@@ -179,7 +179,8 @@ commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, RawOpts) ->
                     ID =>
                         UnsignedCommitment#{
                             <<"signature">> => hb_util:encode(Signature),
-                            <<"committed">> => ModCommittedKeys
+                            <<"committed">> =>
+                                decode_committed_keys(ModCommittedKeys, Opts)
                         }
                 }
         },
@@ -236,6 +237,7 @@ commit(BaseMsg, Req = #{ <<"type">> := <<"hmac-sha256">> }, RawOpts) ->
             {keyid, KeyID},
             {committer, Committer},
             {committed, CommittedKeys},
+            {mod_committed_keys, ModCommittedKeys},
             {sig_base, SigBase},
             {hmac, HMac}
         }
@@ -249,13 +251,26 @@ commit(BaseMsg, Req = #{ <<"type">> := <<"hmac-sha256">> }, RawOpts) ->
                         HMac =>
                             UnauthedCommitment#{
                                 <<"signature">> => HMac,
-                                <<"committed">> => ModCommittedKeys
+                                <<"committed">> =>
+                                    decode_committed_keys(ModCommittedKeys, Opts)
                             }
                     }
             }
         },
     ?event({hmac_generation_complete, Res}),
     Res.
+
+%% @doc Decode the committed keys from their percent-encoded form, for use in
+%% the `committed` key of the commitment.
+decode_committed_keys(ModCommittedKeys, _Opts) when is_list(ModCommittedKeys) ->
+    lists:map(fun hb_escape:decode/1, ModCommittedKeys);
+decode_committed_keys(ModCommittedKeys, Opts) when is_map(ModCommittedKeys) ->
+    hb_util:list_to_numbered_message(
+        decode_committed_keys(
+            hb_util:message_to_ordered_list(ModCommittedKeys, Opts),
+            Opts
+        )
+    ).
 
 %% @doc Annotate the commitment with the `bundle' key if the request contains
 %% it.
@@ -338,7 +353,11 @@ normalize_for_encoding(Msg, Commitment, Opts) ->
         ),
     ?event({inputs, {list, Inputs}}),
     % Filter the message down to only the requested keys, then encode it.
-    MsgWithOnlyInputs = maps:with(Inputs, Msg),
+    MsgWithOnlyInputs =
+        maps:with(
+            Inputs ++ lists:map(fun hb_escape:encode/1, Inputs),
+            Msg
+        ),
     ?event({msg_with_only_inputs, maps:without([<<"commitments">>], MsgWithOnlyInputs)}),
     {ok, EncodedWithSigInfo} =
         to(
