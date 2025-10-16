@@ -67,23 +67,16 @@ latest(ProcID, Opts) -> latest(ProcID, [], Opts).
 latest(ProcID, RequiredPath, Opts) ->
     latest(ProcID, RequiredPath, undefined, Opts).
 latest(ProcID, RawRequiredPath, Limit, RawOpts) ->
-    Scope = hb_opts:get(process_cache_scope, undefined, RawOpts),
-    Opts =
-        RawOpts#{
-            store =>
-                hb_store:scope(
-                    hb_opts:get(store, no_viable_store, RawOpts),
-                    Scope
-                )
-        },
-    ?event(
-        {latest_called,
-            {proc_id, ProcID},
-            {required_path, RawRequiredPath},
-            {limit, Limit},
-            {scope, Scope}
-        }
-    ),
+    Scope = hb_opts:get(process_cache_scope, local, RawOpts),
+    % Normalize the store descriptor to a list of stores.
+    UnscopedStore =
+        case hb_opts:get(store, no_viable_store, RawOpts) of
+            StoreMsg when is_map(StoreMsg) -> [StoreMsg];
+            Other -> Other
+        end,
+    % Apply the scope to the store and update the options message.
+    ScopedStore = hb_store:scope(UnscopedStore, Scope),
+    Opts = RawOpts#{ store => ScopedStore },
     % Convert the required path to a list of _binary_ keys.
     RequiredPath =
         case RawRequiredPath of
