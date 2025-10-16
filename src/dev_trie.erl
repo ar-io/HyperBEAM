@@ -11,7 +11,7 @@
 %%% defined by the number of permutations given by an N-bit chunk comparison -- e.g., a
 %%% 2-bit comparison yields paths {00, 11, 01, 10}, which is why each node in a radix-4
 %%% trie can have at most 4 children!)
--module(dev_radix_trie).
+-module(dev_trie).
 -export([info/0, set/3, get/3, get/4]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
@@ -239,7 +239,7 @@ verify_nodes(TrieNode, Opts) ->
 
 node_count_forwards_test() ->
     Trie = hb_ao:set(
-        #{<<"device">> => <<"radix-trie@1.0">>},
+        #{<<"device">> => <<"trie@1.0">>},
         #{
             <<"car">> => 31337,
             <<"card">> => 90210,
@@ -257,7 +257,7 @@ node_count_forwards_test() ->
 
 node_count_backwards_test() ->
     Trie = hb_ao:set(
-        #{<<"device">> => <<"radix-trie@1.0">>},
+        #{<<"device">> => <<"trie@1.0">>},
         #{
             <<"zebra">> => 0,
             <<"camshaft">> => 777,
@@ -275,7 +275,7 @@ node_count_backwards_test() ->
 
 basic_topology_forwards_test() ->
     Trie = hb_ao:set(
-        #{<<"device">> => <<"radix-trie@1.0">>},
+        #{<<"device">> => <<"trie@1.0">>},
         #{
             <<"car">> => 31337,
             <<"card">> => 90210,
@@ -309,7 +309,7 @@ basic_topology_forwards_test() ->
 
 basic_topology_backwards_test() ->
     Trie = hb_ao:set(
-        #{<<"device">> => <<"radix-trie@1.0">>},
+        #{<<"device">> => <<"trie@1.0">>},
         #{
             <<"zebra">> => 0,
             <<"camshaft">> => 777,
@@ -343,7 +343,7 @@ basic_topology_backwards_test() ->
 
 basic_retrievability_test() ->
     Trie = hb_ao:set(
-        #{<<"device">> => <<"radix-trie@1.0">>},
+        #{<<"device">> => <<"trie@1.0">>},
         #{
             <<"car">> => 31337,
             <<"card">> => 90210,
@@ -371,7 +371,7 @@ basic_retrievability_test() ->
 
 verify_test() ->
     Trie = hb_ao:set(
-        #{<<"device">> => <<"radix-trie@1.0">>},
+        #{<<"device">> => <<"trie@1.0">>},
         #{
             <<"car">> => 31337,
             <<"card">> => 90210,
@@ -399,7 +399,7 @@ large_balance_table_test() ->
         ),
     {ok, BaseTrie} =
         hb_ao:resolve(
-            #{ <<"device">> => <<"radix-trie@1.0">> },
+            #{ <<"device">> => <<"trie@1.0">> },
             Balances#{ <<"path">> => <<"set">> },
             #{}
         ),
@@ -435,7 +435,7 @@ large_balance_table_test() ->
 
 insertion_cases_test() ->
     Trie1 = hb_ao:set(
-        #{<<"device">> => <<"radix-trie@1.0">>},
+        #{<<"device">> => <<"trie@1.0">>},
         #{<<"toronto">> => 1},
         #{}
     ),
@@ -598,7 +598,7 @@ insertion_cases_test() ->
 % the resultant topology to the same trie constructed *in bulk*.
 forwards_bulk_insertion_test() ->
     Trie = hb_ao:set(
-        #{<<"device">> => <<"radix-trie@1.0">>},
+        #{<<"device">> => <<"trie@1.0">>},
         #{
             <<"toronto">> => 1,
             <<"to">> => 2,
@@ -636,7 +636,7 @@ forwards_bulk_insertion_test() ->
 % Same as fowards_bulk_insertion_test(), except we bulk load the trie with the keys reversed.
 backwards_bulk_insertion_test() ->
     Trie = hb_ao:set(
-        #{<<"device">> => <<"radix-trie@1.0">>},
+        #{<<"device">> => <<"trie@1.0">>},
         #{
             <<"t">> => 9,
             <<"app">> => 8,
@@ -673,7 +673,7 @@ backwards_bulk_insertion_test() ->
 
 bulk_update_cases_test() ->
     Trie = hb_ao:set(
-        #{<<"device">> => <<"radix-trie@1.0">>},
+        #{<<"device">> => <<"trie@1.0">>},
         #{
             <<"toronto">> => 1,
             <<"to">> => 2,
