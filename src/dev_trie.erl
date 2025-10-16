@@ -26,7 +26,7 @@ info() ->
         default => fun get/4
      }.
 
-%%% @doc Get the value associated with a key from a trie represented in a base message.
+%% @doc Get the value associated with a key from a trie represented in a base message.
 get(Key, Trie, Req, Opts) ->
     get(Trie, Req#{<<"key">> => Key}, Opts).
 get(TrieNode, Req, Opts) ->
@@ -167,13 +167,18 @@ retrieve(TrieNode, Key, Opts, KeyPrefixSizeAcc) ->
                                 true -> {error, not_found}
                             end;
                         true ->
-                            retrieve(SubTrie, Key, Opts, bit_size(EdgeLabel) + KeyPrefixSizeAcc)
+                            retrieve(
+                                SubTrie,
+                                Key,
+                                Opts,
+                                bit_size(EdgeLabel) + KeyPrefixSizeAcc
+                            )
                     end;
                 _ -> {error, not_found}
             end
     end.
 
-% Get a list of edge labels for a given trie node.
+%% @doc Get a list of edge labels for a given trie node.
 edges(TrieNode, Opts) when not is_map(TrieNode) -> [];
 edges(TrieNode, Opts) ->
     Filtered = hb_maps:without(
@@ -189,7 +194,8 @@ edges(TrieNode, Opts) ->
     ),
     hb_maps:keys(Filtered).
 
-% Compute the longest common binary prefix of A and B, comparing chunks of N bits.
+%% @doc Compute the longest common binary prefix of A and B, comparing chunks of
+%% N bits.
 bitwise_lcp(A, B, N) ->
     bitwise_lcp(A, B, N, 0).
 bitwise_lcp(A, B, N, Acc) ->
@@ -199,8 +205,9 @@ bitwise_lcp(A, B, N, Acc) ->
         _ -> Acc
     end.
 
-% For a given key and list of edge labels, determine which edge label presents the longest prefix
-% match, comparing chunks of N bits. Returns a 2-tuple of {edge label, commonality in bits}.
+%% @doc For a given key and list of edge labels, determine which edge label presents
+%% the longest prefix match, comparing chunks of N bits. Returns a 2-tuple of
+%% {edge label, commonality in bits}.
 longest_prefix_match(Key, EdgeLabels, N) ->
     longest_prefix_match({<<>>, 0}, Key, EdgeLabels, N).
 longest_prefix_match(Best, _Key, [], _N) -> Best;
