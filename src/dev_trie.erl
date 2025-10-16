@@ -86,17 +86,18 @@ insert(TrieNode, Key, Val, Opts, KeyPrefixSizeAcc) ->
                 false ->
                     TrieNode#{<<"node-value">> => Val}
             end;
-        % FULL MATCH: There is a child of this node with an edge label that completely
-        % matches *some portion* of what remains to be matched in our key. If the child
-        % is a normal node, this is the straightforward recursive case -- we simply traverse
-        % to that child and continue. But if the child is an implicit leaf node, we've
-        % reached a base case: if the edge label to the implicit leaf node is exactly
-        % the same size as the remaining key suffix, then we've effectively discovered
-        % that the key we're trying to insert already exists, and its value is kept
-        % in an implicit leaf node, so we simply update it. If the edge label *isn't*
-        % the same size, we must transform the implicit leaf node into an internal node
-        % which marks the terminal value for its key, and add to it an edge
-        % representing the remaining key suffix which maps to a new implicit leaf node.
+        % FULL MATCH: There is a child of this node with an edge label that
+        % completely matches *some portion* of what remains to be matched in our
+        % key. If the child is a normal node, this is the straightforward recursive
+        % case -- we simply traverse to that child and continue. But if the child
+        % is an implicit leaf node, we've reached a base case: if the edge label
+        % to the implicit leaf node is exactly the same size as the remaining key
+        % suffix, then we've effectively discovered that the key we're trying to
+        % insert already exists, and its value is kept in an implicit leaf node,
+        % so we simply update it. If the edge label *isn't* the same size, we must
+        % transform the implicit leaf node into an internal node which marks the
+        % terminal value for its key, and add to it an edge representing the
+        % remaining key suffix which maps to a new implicit leaf node.
         {EdgeLabel, MatchSize} when MatchSize =:= bit_size(EdgeLabel) ->
             SubTrie = hb_maps:get(EdgeLabel, TrieNode, undefined, Opts),
             case is_map(SubTrie) of
@@ -115,22 +116,36 @@ insert(TrieNode, Key, Val, Opts, KeyPrefixSizeAcc) ->
                                         <<"node-value">> => SubTrie,
                                         KeySuffixSuffix => Val
                                     }
-                                }
+                            }
                     end;
                 true ->
-                    NewSubTrie = insert(SubTrie, Key, Val, Opts, bit_size(EdgeLabel) + KeyPrefixSizeAcc),
+                    NewSubTrie =
+                        insert(
+                            SubTrie,
+                            Key,
+                            Val,
+                            Opts,
+                            bit_size(EdgeLabel) + KeyPrefixSizeAcc
+                        ),
                     TrieNode#{EdgeLabel => NewSubTrie}
             end;
-        % PARTIAL MATCH: There is a child of this node with an edge label that partially
-        % matches *some portion* of what remains to be matched in our key. This is the
-        % node splitting case. We detach the subtrie rooted at the child, transform its
-        % dangling edge label into the common portion of the edge label and what remains
-        % to be matched in our key, and reattach the new subtrie under a new child.
+        % PARTIAL MATCH: There is a child of this node with an edge label that
+        % partially matches *some portion* of what remains to be matched in our
+        % key. This is the node splitting case. We detach the subtrie rooted at
+        % the child, transform its dangling edge label into the common portion of
+        % the edge label and what remains to be matched in our key, and reattach
+        % the new subtrie under a new child.
         {EdgeLabel, MatchSize} ->
             SubTrie = hb_maps:get(EdgeLabel, TrieNode, undefined, Opts),
             NewTrie = hb_maps:remove(EdgeLabel, TrieNode, Opts),
-            <<EdgeLabelPrefix:MatchSize/bitstring, EdgeLabelSuffix/bitstring>> = EdgeLabel,
-            <<_KeySuffixPrefix:MatchSize/bitstring, KeySuffixSuffix/bitstring>> = KeySuffix,
+            <<
+                EdgeLabelPrefix:MatchSize/bitstring,
+                EdgeLabelSuffix/bitstring
+            >> = EdgeLabel,
+            <<
+                _KeySuffixPrefix:MatchSize/bitstring,
+                KeySuffixSuffix/bitstring
+            >> = KeySuffix,
             case bit_size(KeySuffixSuffix) > 0 of
                 true ->
                     NewTrie#{
@@ -177,8 +192,10 @@ retrieve(TrieNode, Key, Opts, KeyPrefixSizeAcc) ->
                     case is_map(SubTrie) of
                         false ->
                             if
-                                bit_size(KeySuffix) =:= bit_size(EdgeLabel) -> SubTrie;
-                                true -> {error, not_found}
+                                bit_size(KeySuffix) =:= bit_size(EdgeLabel) ->
+                                    SubTrie;
+                                true ->
+                                    {error, not_found}
                             end;
                         true ->
                             retrieve(
@@ -486,7 +503,10 @@ insertion_cases_test() ->
     ),
     ?assert(
         hb_message:match(
-            #{<<"apple">> => 3, <<"to">> => #{<<"node-value">> => 2, <<"ronto">> => 1}},
+            #{
+                <<"apple">> => 3,
+                <<"to">> => #{<<"node-value">> => 2, <<"ronto">> => 1}
+            },
             Trie3,
             primary
         )
@@ -539,7 +559,11 @@ insertion_cases_test() ->
             #{
                 <<"apple">> => 3,
                 <<"to">> => #{
-                    <<"r">> => #{<<"rent">> => 5, <<"onto">> => 1, <<"node-value">> => 6},
+                    <<"r">> => #{
+                        <<"rent">> => 5,
+                        <<"onto">> => 1,
+                        <<"node-value">> => 6
+                    },
                     <<"node-value">> => 2,
                     <<"wn">> => 4
                 }
@@ -558,7 +582,11 @@ insertion_cases_test() ->
              #{
                 <<"a">> => #{<<"pple">> => 3, <<"node-value">> => 7},
                 <<"to">> => #{
-                    <<"r">> => #{<<"rent">> => 5, <<"onto">> => 1, <<"node-value">> => 6},
+                    <<"r">> => #{
+                        <<"rent">> => 5,
+                        <<"onto">> => 1,
+                        <<"node-value">> => 6
+                    },
                     <<"node-value">> => 2,
                     <<"wn">> => 4
                 }
@@ -580,7 +608,11 @@ insertion_cases_test() ->
                     <<"node-value">> => 7
                 },
                 <<"to">> => #{
-                    <<"r">> => #{<<"rent">> => 5, <<"onto">> => 1, <<"node-value">> => 6},
+                    <<"r">> => #{
+                        <<"rent">> => 5,
+                        <<"onto">> => 1,
+                        <<"node-value">> => 6
+                    },
                     <<"node-value">> => 2,
                     <<"wn">> => 4
                 }
@@ -604,7 +636,11 @@ insertion_cases_test() ->
                 <<"t">> => #{
                     <<"node-value">> => 9,
                     <<"o">> => #{
-                        <<"r">> => #{<<"rent">> => 5, <<"onto">> => 1, <<"node-value">> => 6},
+                        <<"r">> => #{
+                            <<"rent">> => 5,
+                            <<"onto">> => 1,
+                            <<"node-value">> => 6
+                        },
                         <<"node-value">> => 2,
                         <<"wn">> => 4
                     }
@@ -615,8 +651,8 @@ insertion_cases_test() ->
         )
     ).
 
-% In insertion_cases_test(), we constructed a complex trie, one key at a time. Here we compare
-% the resultant topology to the same trie constructed *in bulk*.
+% In insertion_cases_test(), we constructed a complex trie, one key at a time.
+% Here we compare the resultant topology to the same trie constructed *in bulk*.
 forwards_bulk_insertion_test() ->
     Trie = hb_ao:set(
         #{<<"device">> => <<"trie@1.0">>},
@@ -643,7 +679,11 @@ forwards_bulk_insertion_test() ->
                 <<"t">> => #{
                     <<"node-value">> => 9,
                     <<"o">> => #{
-                        <<"r">> => #{<<"rent">> => 5, <<"onto">> => 1, <<"node-value">> => 6},
+                        <<"r">> => #{
+                            <<"rent">> => 5,
+                            <<"onto">> => 1,
+                            <<"node-value">> => 6
+                        },
                         <<"node-value">> => 2,
                         <<"wn">> => 4
                     }
@@ -654,7 +694,8 @@ forwards_bulk_insertion_test() ->
         )
     ).
 
-% Same as fowards_bulk_insertion_test(), except we bulk load the trie with the keys reversed.
+% Same as fowards_bulk_insertion_test(), except we bulk load the trie with the
+% keys reversed.
 backwards_bulk_insertion_test() ->
     Trie = hb_ao:set(
         #{<<"device">> => <<"trie@1.0">>},
@@ -681,7 +722,11 @@ backwards_bulk_insertion_test() ->
                 <<"t">> => #{
                     <<"node-value">> => 9,
                     <<"o">> => #{
-                        <<"r">> => #{<<"rent">> => 5, <<"onto">> => 1, <<"node-value">> => 6},
+                        <<"r">> => #{
+                            <<"rent">> => 5,
+                            <<"onto">> => 1,
+                            <<"node-value">> => 6
+                        },
                         <<"node-value">> => 2,
                         <<"wn">> => 4
                     }
@@ -718,7 +763,11 @@ bulk_update_cases_test() ->
                 <<"t">> => #{
                     <<"node-value">> => 9,
                     <<"o">> => #{
-                        <<"r">> => #{<<"rent">> => 5, <<"onto">> => 1, <<"node-value">> => 6},
+                        <<"r">> => #{
+                            <<"rent">> => 5,
+                            <<"onto">> => 1,
+                            <<"node-value">> => 6
+                        },
                         <<"node-value">> => 2,
                         <<"wn">> => 4
                     }
@@ -753,7 +802,11 @@ bulk_update_cases_test() ->
                 <<"t">> => #{
                     <<"node-value">> => 120,
                     <<"o">> => #{
-                        <<"r">> => #{<<"rent">> => 80, <<"onto">> => 40, <<"node-value">> => 90},
+                        <<"r">> => #{
+                            <<"rent">> => 80,
+                            <<"onto">> => 40,
+                            <<"node-value">> => 90
+                        },
                         <<"node-value">> => 50,
                         <<"wn">> => 70
                     }
