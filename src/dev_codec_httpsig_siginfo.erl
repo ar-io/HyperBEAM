@@ -367,15 +367,16 @@ from_siginfo_keys(HTTPEncMsg, BodyKeys, SigInfoCommitted) ->
             _ ->
                 ListWithoutBodyKey
         end,
-    Final =
+    Normalized =
         hb_ao:normalize_keys(
             lists:map(
                 fun hb_link:remove_link_specifier/1,
                 ListWithoutContentType
             )
         ),
-    ?event({from_siginfo_keys, {list, Final}}),
-    Final.
+    List = hb_util:message_to_ordered_list(Normalized),
+    ?event({from_siginfo_keys, {list, List}}),
+    List.
 
 %% @doc Convert committed keys to their siginfo format. This involves removing
 %% the `body' key from the committed keys, if present, and replacing it with
