@@ -54,11 +54,12 @@ from(HTTP, _Req, Opts) ->
     WithIDs = decode_ids(WithBodyKeys, Opts),
     % Remove the signature-related headers, such that they can be reconstructed
     % from the commitments.
-    MsgWithoutSigs = hb_maps:without(
-        [<<"signature">>, <<"signature-input">>, <<"commitments">>],
-        WithIDs,
-        Opts
-    ),
+    MsgWithoutSigs =
+        hb_maps:without(
+            [<<"signature">>, <<"signature-input">>, <<"commitments">>],
+            WithIDs,
+            Opts
+        ),
     % Finally, we need to add the signatures to the TABM.
     Commitments =
         dev_codec_httpsig_siginfo:siginfo_to_commitments(
@@ -411,25 +412,27 @@ to(TABM, Req, FormatOpts, Opts) when is_map(TABM) ->
         ),
     % Finally, add the signatures to the encoded HTTP message with the
     % commitments from the original message.
-    CommitmentsMap = case maps:get(<<"commitments">>, Msg, undefined) of
-        undefined ->
-            case maps:get(<<"signature">>, Msg, undefined) of
-                undefined -> #{};
-                Signature ->
-                    MaybeBundleTag = maps:with([<<"bundle">>], Msg),
-                    #{
-                        Signature => MaybeBundleTag#{
-                            <<"signature">> => Signature,
-                            <<"committed">> => maps:get(<<"committed">>, Msg, #{}),
-                            <<"keyid">> => maps:get(<<"keyid">>, Msg, <<>>),
-                            <<"commitment-device">> => <<"httpsig@1.0">>,
-                            <<"type">> => maps:get(<<"type">>, Msg, <<>>)
+    CommitmentsMap =
+        case maps:get(<<"commitments">>, Msg, undefined) of
+            undefined ->
+                case maps:get(<<"signature">>, Msg, undefined) of
+                    undefined -> #{};
+                    Signature ->
+                        MaybeBundleTag = maps:with([<<"bundle">>], Msg),
+                        #{
+                            Signature => MaybeBundleTag#{
+                                <<"signature">> => Signature,
+                                <<"keyid">> => maps:get(<<"keyid">>, Msg, <<>>),
+                                <<"commitment-device">> => <<"httpsig@1.0">>,
+                                <<"type">> => maps:get(<<"type">>, Msg, <<>>),
+                                <<"committed">> =>
+                                    maps:get(<<"committed">>, Msg, #{})
+                            }
                         }
-                    }
-            end;
-        Commitments ->
-            Commitments
-    end,
+                end;
+            Commitments ->
+                Commitments
+        end,
     ?event({converting_commitments_to_siginfo, Msg}),
     {ok,
         maps:merge(
