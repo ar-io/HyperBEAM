@@ -365,26 +365,27 @@ to(TABM, Req = #{ <<"index">> := true }, _FormatOpts, Opts) ->
             % Return the encoded HTTPSig message without modification.
             {ok, EncOriginal}
     end;
-to(RawTABM, Req, FormatOpts, Opts) when is_map(RawTABM) ->
-    TABM = encode_ids(RawTABM),
+to(TABM, Req, FormatOpts, Opts) when is_map(TABM) ->
     % Ensure that the material for the message is loaded, if the request is
     % asking for a bundle.
     Msg =
         case hb_util:atom(hb_maps:get(<<"bundle">>, Req, false, Opts)) of
-            false -> TABM;
+            false -> encode_ids(TABM);
             true ->
                 % Convert back to the fully loaded structured@1.0 message, then
                 % convert to TABM with bundling enabled.
                 Structured = hb_message:convert(TABM, <<"structured@1.0">>, Opts),
                 Loaded = hb_cache:ensure_all_loaded(Structured, Opts),
-                hb_message:convert(
-                    Loaded,
-                    tabm,
-                    #{
-                        <<"device">> => <<"structured@1.0">>,
-                        <<"bundle">> => true
-                    },
-                    Opts
+                encode_ids(
+                    hb_message:convert(
+                        Loaded,
+                        tabm,
+                        #{
+                            <<"device">> => <<"structured@1.0">>,
+                            <<"bundle">> => true
+                        },
+                        Opts
+                    )
                 )
         end,
     % Group the IDs into a dictionary, so that they can be distributed as
