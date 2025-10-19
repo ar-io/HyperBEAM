@@ -523,7 +523,7 @@ escaped_value_test() ->
     Signature = crypto:strong_rand_bytes(512),
     ID = hb_util:human_id(crypto:hash(sha256, Signature)),
     Commitment = #{
-        <<"committed">> => #{},
+        <<"committed">> => [],
         <<"committer">> => Committer,
         <<"commitment-device">> => <<"tx@1.0">>,
         <<"keyid">> => <<"publickey:", (hb_util:encode(KeyID))/binary>>,
