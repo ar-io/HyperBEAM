@@ -540,7 +540,6 @@ escaped_value_test() ->
         <<"signature">> => hb_util:encode(Signature),
         <<"type">> => <<"rsa-pss-sha256">>
     },
-
     SigInfo = commitments_to_siginfo(#{}, #{ ID => Commitment }, #{}),
     Commitments = siginfo_to_commitments(SigInfo, #{}, #{}),
     ?event(debug_test, {siginfo, {explicit, SigInfo}}),
