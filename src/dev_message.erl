@@ -443,7 +443,7 @@ committed(Self, Req, Opts) ->
 %% @doc Return a message with only the relevant commitments for a given request.
 %% See `commitment_ids_from_request/3' for more information on the request format.
 with_relevant_commitments(Base, Req, Opts) ->
-    Commitments = maps:get(<<"commitment-ids">>, Base, #{}),
+    Commitments = maps:get(<<"commitments">>, Base, #{}),
     CommitmentIDs = commitment_ids_from_request(Base, Req, Opts),
     Base#{ <<"commitments">> => maps:with(CommitmentIDs, Commitments) }.
 
