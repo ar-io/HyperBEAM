@@ -243,7 +243,7 @@ with_only_committed(Msg, Opts) when is_map(Msg) ->
                 CommittedKeys =
                     hb_message:committed(
                         Msg,
-                        #{ <<"commitments">> => <<"all">> },
+                        #{ <<"commitment-ids">> => <<"all">> },
                         Opts
                     ),
                 % Add the ao-body-key to the committed list if it is not
