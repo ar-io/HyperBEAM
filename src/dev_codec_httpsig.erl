@@ -179,8 +179,7 @@ commit(MsgToSign, Req = #{ <<"type">> := <<"rsa-pss-sha512">> }, RawOpts) ->
                     ID =>
                         UnsignedCommitment#{
                             <<"signature">> => hb_util:encode(Signature),
-                            <<"committed">> =>
-                                decode_committed_keys(ModCommittedKeys, Opts)
+                            <<"committed">> => ModCommittedKeys
                         }
                 }
         },
@@ -251,26 +250,13 @@ commit(BaseMsg, Req = #{ <<"type">> := <<"hmac-sha256">> }, RawOpts) ->
                         HMac =>
                             UnauthedCommitment#{
                                 <<"signature">> => HMac,
-                                <<"committed">> =>
-                                    decode_committed_keys(ModCommittedKeys, Opts)
+                                <<"committed">> => ModCommittedKeys
                             }
                     }
             }
         },
     ?event({hmac_generation_complete, Res}),
     Res.
-
-%% @doc Decode the committed keys from their percent-encoded form, for use in
-%% the `committed` key of the commitment.
-decode_committed_keys(ModCommittedKeys, _Opts) when is_list(ModCommittedKeys) ->
-    lists:map(fun hb_escape:decode/1, ModCommittedKeys);
-decode_committed_keys(ModCommittedKeys, Opts) when is_map(ModCommittedKeys) ->
-    hb_util:list_to_numbered_message(
-        decode_committed_keys(
-            hb_util:message_to_ordered_list(ModCommittedKeys, Opts),
-            Opts
-        )
-    ).
 
 %% @doc Annotate the commitment with the `bundle' key if the request contains
 %% it.
@@ -395,17 +381,20 @@ normalize_for_encoding(Msg, Commitment, Opts) ->
     % of being added to the body. These keys will need to be removed from the
     % `committed' list and re-added where the `content-digest' was in the
     % `from_siginfo_keys' call.
-    UnescapedKeys = lists:map(fun hb_escape:decode/1, EncodedKeys),
+    UnescapedKeysBeforeSigInfo = decode_committed_keys(EncodedKeys, Opts),
     BodyKeys =
         lists:filter(
-            fun(Key) -> not key_present(Key, UnescapedKeys) end,
+            fun(Key) -> not key_present(Key, UnescapedKeysBeforeSigInfo) end,
             RawInputs
         ),
     KeysForCommitment =
-        dev_codec_httpsig_siginfo:from_siginfo_keys(
-            EncodedWithSigInfo,
-            BodyKeys,
-            KeysForEncoding
+        decode_committed_keys(
+            dev_codec_httpsig_siginfo:from_siginfo_keys(
+                EncodedWithSigInfo,
+                BodyKeys,
+                KeysForEncoding
+            ),
+            Opts
         ),
     ?event(debug_httpsig,
         {normalized_for_encoding,
@@ -421,6 +410,18 @@ normalize_for_encoding(Msg, Commitment, Opts) ->
         Commitment#{ <<"committed">> => KeysForEncoding },
         KeysForCommitment
     }.
+
+%% @doc Decode the committed keys from their percent-encoded form, for use in
+%% the `committed` key of the commitment.
+decode_committed_keys(ModCommittedKeys, _Opts) when is_list(ModCommittedKeys) ->
+    lists:map(fun hb_escape:decode/1, ModCommittedKeys);
+decode_committed_keys(ModCommittedKeys, Opts) when is_map(ModCommittedKeys) ->
+    hb_util:list_to_numbered_message(
+        decode_committed_keys(
+            hb_util:message_to_ordered_list(ModCommittedKeys, Opts),
+            Opts
+        )
+    ).
 
 %% @doc Calculate if a key or its `+link' TABM variant is present in a message.
 key_present(Key, Keys) ->
