@@ -109,7 +109,7 @@ print_greeter(Config, PrivWallet) ->
         "==        ██████╔╝███████╗██║  ██║██║ ╚═╝ ██║ BUILD THE  ==~n"
         "==        ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝    FUTURE. ==~n"
         "===========================================================~n"
-        "== Node activate at: ~s ==~n"
+        "== Node activated at: ~s ==~n"
         "== Operator: ~s ==~n"
         "===========================================================~n"
         "== Config:                                               ==~n"
@@ -128,7 +128,7 @@ print_greeter(Config, PrivWallet) ->
                         ]
                     )
                 ),
-                35, leading, $ 
+                34, leading, $
             ),
             hb_util:human_id(ar_wallet:to_address(PrivWallet)),
             FormattedConfig
