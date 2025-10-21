@@ -361,6 +361,17 @@ get_tx_rsa_nested_bundle_test() ->
     ?assert(hb_message:match(ManualChild, Child, only_present)),
     ok.
 
+%% @TODO: This test is disabled because it takes too long to run. Re-enable
+%% once some performance optimizations are implemented.
+get_tx_rsa_large_bundle_test_disabled() ->
+    {timeout, 300, fun() ->
+        Node = hb_http_server:start_node(),
+        Path = <<"/~arweave@2.9-pre/tx&tx=VifINXnMxLwJXOjHG5uM0JssiylR8qvajjj7HlzQvZA">>,
+        {ok, Root} = hb_http:get(Node, Path, #{}),
+        ?event(debug_test, {root, Root}),
+        ?assert(hb_message:verify(Root, all, #{})),
+        ok
+    end}.
 
 get_bad_tx_test() ->
     Node = hb_http_server:start_node(),
