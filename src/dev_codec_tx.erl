@@ -116,18 +116,24 @@ to(TX, _Req, _Opts) when is_record(TX, tx) -> {ok, TX};
 to(RawTABM, Req, Opts) when is_map(RawTABM) ->
     % Ensure that the TABM is fully loaded if the `bundle` key is set to true.
     ?event({to, {inbound, RawTABM}, {req, Req}}),
-    MaybeBundle = dev_codec_ans104_to:maybe_load(RawTABM, Req, Opts),
+    MaybeCommitment = hb_message:commitment(
+        #{ <<"commitment-device">> => <<"tx@1.0">> },
+        RawTABM,
+        Opts
+    ),
+    IsBundle = dev_codec_ans104_to:is_bundle(MaybeCommitment, Req, Opts),
+    MaybeBundle = dev_codec_ans104_to:maybe_load(RawTABM, IsBundle, Opts),
     % Calculate and normalize the `data', if applicable.
     Data = dev_codec_ans104_to:data(MaybeBundle, Req, Opts),
     ?event({calculated_data, Data}),
     TX0 = dev_codec_ans104_to:siginfo(
-        MaybeBundle, Data, <<"tx@1.0">>,
+        MaybeBundle, MaybeCommitment,
         fun dev_codec_tx_to:fields_to_tx/4, Opts),
     ?event({found_siginfo, TX0}),
     TX1 = TX0#tx { data = Data },
     % Calculate the tags for the TX.
     Tags = dev_codec_ans104_to:tags(
-        TX1, <<"tx@1.0">>, MaybeBundle,
+        TX1, MaybeCommitment, MaybeBundle,
         dev_codec_tx_to:excluded_tags(TX1, MaybeBundle, Opts),
         Opts),
     ?event({calculated_tags, Tags}),
@@ -946,40 +952,95 @@ do_signed_tabm_roundtrip(UnsignedTX, UnsignedTABM, Commitment, Device, Req) ->
     ?assertEqual(SignedTABM, FinalTABM, signed_tabm_roundtrip).
 
 bundle_commitment_test() ->
+    test_bundle_commitment(unbundled, unbundled, unbundled),
+    test_bundle_commitment(unbundled, bundled, unbundled),
+    test_bundle_commitment(unbundled, unbundled, bundled),
+    test_bundle_commitment(unbundled, bundled, bundled),
+    test_bundle_commitment(bundled, unbundled, unbundled),
+    test_bundle_commitment(bundled, bundled, unbundled),
+    test_bundle_commitment(bundled, unbundled, bundled),
+    test_bundle_commitment(bundled, bundled, bundled),
+    ok.
+
+test_bundle_commitment(Commit, Encode, Decode) ->
     Opts = #{ priv_wallet => hb:wallet() },
     Structured = #{ <<"list">> => [1, 2, 3] },
+    ToBool = fun(unbundled) -> false; (bundled) -> true end,
+    Label = lists:flatten(io_lib:format("~p -> ~p -> ~p",
+        [Commit, Encode, Decode])),
 
-    MsgFalse = hb_message:commit(
+    Committed = hb_message:commit(
         Structured,
         Opts,
-        #{ <<"device">> => <<"tx@1.0">>, <<"bundle">> => false }),
-    ?event(debug_test, {msg_false, MsgFalse}),
-    ?assert(hb_message:verify(MsgFalse, all, Opts)),
-    TXFalseFalse = hb_message:convert(MsgFalse, 
-        #{ <<"device">> => <<"tx@1.0">>, <<"bundle">> => false },
-        <<"structured@1.0">>, #{}),
-    ?event(debug_test, {tx_false_false,  TXFalseFalse}),
-    ?assert(ar_tx:verify(TXFalseFalse)),
-    TXFalseTrue = hb_message:convert(MsgFalse, 
-        #{ <<"device">> => <<"tx@1.0">>, <<"bundle">> => true },
-        <<"structured@1.0">>, #{}),
-    ?event(debug_test, {tx_false_true,  TXFalseTrue}),
-    ?assertEqual(false, dev_arweave_common:is_signed(TXFalseTrue)),
+        #{ <<"device">> => <<"tx@1.0">>, <<"bundle">> => ToBool(Commit) }),
+    ?event(debug_test, {committed, Label, {explicit, Committed}}),
+    ?assert(hb_message:verify(Committed, all, Opts), Label),
+    {ok, _, CommittedCommitment} = hb_message:commitment(#{}, Committed, Opts),
+    ?assertEqual(
+        [<<"list">>], hb_maps:get(<<"committed">>, CommittedCommitment, Opts),
+        Label),
+    ?assertEqual(ToBool(Commit),
+        hb_util:atom(hb_ao:get(<<"bundle">>, CommittedCommitment, false, Opts)),
+        Label),
     
-    MsgTrue = hb_message:commit(
-        MsgFalse,
-        Opts,
-        #{ <<"device">> => <<"tx@1.0">>, <<"bundle">> => true }),
-    ?event(debug_test, {msg_true, MsgTrue}),
-    ?assert(hb_message:verify(MsgTrue, all, Opts)),
-    TXTrueFalse = hb_message:convert(MsgTrue, 
-        #{ <<"device">> => <<"tx@1.0">>, <<"bundle">> => false },
-        <<"structured@1.0">>, #{}),
-    ?event(debug_test, {tx_true_false, TXTrueFalse}),
-    ?assertEqual(false, dev_arweave_common:is_signed(TXTrueFalse)),
-    TXTrueTrue = hb_message:convert(MsgTrue, 
-        #{ <<"device">> => <<"tx@1.0">>, <<"bundle">> => true },
-        <<"structured@1.0">>, #{}),
-    ?event(debug_test, {tx_true_true,  TXTrueTrue}),
-    ?assert(ar_tx:verify(TXTrueTrue)),
+    Encoded = hb_message:convert(Committed, 
+        #{ <<"device">> => <<"tx@1.0">>, <<"bundle">> => ToBool(Encode) },
+        <<"structured@1.0">>, Opts),
+    ?event(debug_test, {encoded, Label, {explicit, Encoded}}),
+    ?assert(ar_tx:verify(Encoded), Label),
+    %% IF the input message is unbundled, #tx.data should be empty.
+    ?assertEqual(ToBool(Commit), Encoded#tx.data /= <<>>, Label),
+
+    Decoded = hb_message:convert(Encoded, 
+        #{ <<"device">> => <<"structured@1.0">>, <<"bundle">> => ToBool(Decode) },
+        #{ <<"device">> => <<"tx@1.0">>, <<"bundle">> => ToBool(Encode) },
+        Opts),
+    ?event(debug_test, {decoded, Label, {explicit, Decoded}}),
+    ?assert(hb_message:verify(Decoded, all, Opts), Label),
+    {ok, _, DecodedCommitment} = hb_message:commitment(#{}, Decoded, Opts),
+    ?assertEqual(
+        [<<"list">>], hb_maps:get(<<"committed">>, DecodedCommitment, Opts),
+        Label),
+    ?assertEqual(ToBool(Commit),
+        hb_util:atom(hb_ao:get(<<"bundle">>, DecodedCommitment, false, Opts)),
+        Label),
+    case Commit of
+        unbundled ->
+            ?assertNotEqual([1, 2, 3], maps:get(<<"list">>, Decoded, Opts), Label);
+        bundled ->
+            ?assertEqual([1, 2, 3], maps:get(<<"list">>, Decoded, Opts), Label)
+    end,
+    ok.
+
+bundle_uncommitted_test() ->
+    test_bundle_uncommitted(unbundled, unbundled),
+    test_bundle_uncommitted(unbundled, bundled),
+    test_bundle_uncommitted(bundled, unbundled),
+    test_bundle_uncommitted(bundled, bundled),
+    ok.
+
+test_bundle_uncommitted(Encode, Decode) ->
+    Opts = #{},
+    Structured = #{ <<"list">> => [1, 2, 3] },
+    ToBool = fun(unbundled) -> false; (bundled) -> true end,
+    Label = lists:flatten(io_lib:format("~p -> ~p", [Encode, Decode])),
+
+    Encoded = hb_message:convert(Structured, 
+        #{ <<"device">> => <<"tx@1.0">>, <<"bundle">> => ToBool(Encode) },
+        <<"structured@1.0">>, Opts),
+    ?event(debug_test, {encoded, Label, {explicit, Encoded}}),
+    %% IF the input message is unbundled, #tx.data should be empty.
+    ?assertEqual(ToBool(Encode), Encoded#tx.data /= <<>>, Label),
+
+    Decoded = hb_message:convert(Encoded, 
+        #{ <<"device">> => <<"structured@1.0">>, <<"bundle">> => ToBool(Decode) },
+        #{ <<"device">> => <<"tx@1.0">>, <<"bundle">> => ToBool(Encode) },
+        Opts),
+    ?event(debug_test, {decoded, Label, {explicit, Decoded}}),
+    case Encode of
+        unbundled ->
+            ?assertNotEqual([1, 2, 3], maps:get(<<"list">>, Decoded, Opts), Label);
+        bundled ->
+            ?assertEqual([1, 2, 3], maps:get(<<"list">>, Decoded, Opts), Label)
+    end,
     ok.

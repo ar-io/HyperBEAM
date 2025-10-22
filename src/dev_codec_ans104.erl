@@ -89,7 +89,7 @@ from(TX, Req, Opts) when is_record(TX, tx) ->
 do_from(RawTX, Req, Opts) ->
     % Ensure the TX is fully deserialized.
     TX = ar_bundles:deserialize(dev_arweave_common:normalize(RawTX)),
-    ?event(debug_test, {from, {parsed_tx, TX}}),
+    ?event({from, {parsed_tx, TX}}),
     % Get the fields, tags, and data from the TX.
     Fields = dev_codec_ans104_from:fields(TX, <<>>, Opts),
     Tags = dev_codec_ans104_from:tags(TX, Opts),
@@ -108,7 +108,7 @@ do_from(RawTX, Req, Opts) ->
     FieldCommitments = dev_codec_ans104_from:fields(TX, ?FIELD_PREFIX, Opts),
     WithCommitments = dev_codec_ans104_from:with_commitments(
         TX, <<"ans104@1.0">>, FieldCommitments, Tags, Base, Keys, Opts),
-    ?event(debug_test, {from, {parsed_message, WithCommitments}}),
+    ?event({from, {parsed_message, WithCommitments}}),
     {ok, WithCommitments}.
 
 %% @doc Internal helper to translate a message to its #tx record representation,
