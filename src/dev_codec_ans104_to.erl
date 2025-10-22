@@ -1,35 +1,41 @@
 %%% @doc Library functions for encoding messages to the ANS-104 format.
 -module(dev_codec_ans104_to).
--export([maybe_load/3, data/3, tags/5, excluded_tags/3]).
--export([siginfo/5, fields_to_tx/4]).
+-export([is_bundle/3, maybe_load/3, data/3, tags/5, excluded_tags/3]).
+-export([siginfo/4, fields_to_tx/4]).
 -include("include/hb.hrl").
+
+is_bundle({ok, _, Commitment}, _Req, Opts) ->
+    hb_util:atom(hb_ao:get(<<"bundle">>, Commitment, false, Opts));
+is_bundle(_, Req, Opts) ->
+    case hb_maps:is_key(<<"bundle">>, Req, Opts) of
+        true -> hb_util:atom(hb_ao:get(<<"bundle">>, Req, false, Opts));
+        false -> hb_util:atom(hb_ao:get(<<"bundle">>, Opts, false, Opts))
+    end.
 
 %% @doc Determine if the message should be loaded from the cache and re-converted
 %% to the TABM format. We do this if the `bundle' key is set to true.
-maybe_load(RawTABM, Req, Opts) ->
-    case hb_util:atom(hb_ao:get(<<"bundle">>, Req, false, Opts)) of
-        false -> RawTABM;
-        true ->
-            % Convert back to the fully loaded structured@1.0 message, then
-            % convert to TABM with bundling enabled.
-            Structured = hb_message:convert(RawTABM, <<"structured@1.0">>, Opts),
-            Loaded = hb_cache:ensure_all_loaded(Structured, Opts),
-            % Convert to TABM with bundling enabled.
-            LoadedTABM =
-                hb_message:convert(
-                    Loaded,
-                    tabm,
-                    #{
-                        <<"device">> => <<"structured@1.0">>,
-                        <<"bundle">> => true
-                    },
-                    Opts
-                ),
-            % Ensure the commitments from the original message are the only
-            % ones in the fully loaded message.
-            LoadedComms = maps:get(<<"commitments">>, RawTABM, #{}),
-            LoadedTABM#{ <<"commitments">> => LoadedComms }
-    end.
+maybe_load(RawTABM, true, Opts) ->
+    % Convert back to the fully loaded structured@1.0 message, then
+    % convert to TABM with bundling enabled.
+    Structured = hb_message:convert(RawTABM, <<"structured@1.0">>, Opts),
+    Loaded = hb_cache:ensure_all_loaded(Structured, Opts),
+    % Convert to TABM with bundling enabled.
+    LoadedTABM =
+        hb_message:convert(
+            Loaded,
+            tabm,
+            #{
+                <<"device">> => <<"structured@1.0">>,
+                <<"bundle">> => true
+            },
+            Opts
+        ),
+    % Ensure the commitments from the original message are the only
+    % ones in the fully loaded message.
+    LoadedComms = maps:get(<<"commitments">>, RawTABM, #{}),
+    LoadedTABM#{ <<"commitments">> => LoadedComms };
+maybe_load(RawTABM, false, _Opts) ->
+    RawTABM.
 
 %% @doc Calculate the fields for a message, returning an initial TX record.
 %% One of the nuances here is that the `target' field must be set correctly.
@@ -38,34 +44,12 @@ maybe_load(RawTABM, Req, Opts) ->
 %% we check if the `target' field is set in the message. If it is encodable as
 %% a valid 32-byte binary ID (assuming it is base64url encoded in the `to' call),
 %% we place it in the `target' field. Otherwise, we leave it unset.
-siginfo(Message, Data, Device, FieldsFun, Opts) ->
-    Commitment = commitment(Message, Data, Device, Opts),
-    case Commitment of
-        not_found ->
-            FieldsFun(#tx{}, <<>>, Message, Opts);
-        multiple_matches ->
-            throw({multiple_ans104_commitments_unsupported, Message});
-        _ ->
-            commitment_to_tx(Commitment, FieldsFun, Opts)
-    end.
-
-commitment(Message, Data, Device,Opts) ->
-    MaybeCommitment =
-        hb_message:commitment(
-            #{ <<"commitment-device">> => Device },
-            Message,
-            Opts
-        ),
-    case MaybeCommitment of
-        {ok, _, Commitment} -> 
-            IsCommitmentBundled = hb_util:bin(hb_ao:get(<<"bundle">>, Commitment, false, Opts)),
-            IsMessageBundled = hb_util:bin(is_map(Data)),
-            case IsMessageBundled =:= IsCommitmentBundled of
-                true -> Commitment;
-                false -> not_found
-            end;
-        _ -> MaybeCommitment
-    end.
+siginfo(_Message, {ok, _, Commitment}, FieldsFun, Opts) ->
+    commitment_to_tx(Commitment, FieldsFun, Opts);
+siginfo(Message, not_found, FieldsFun, Opts) ->
+    FieldsFun(#tx{}, <<>>, Message, Opts);
+siginfo(Message, multiple_matches, _FieldsFun, _Opts) ->
+    throw({multiple_ans104_commitments_unsupported, Message}).
 
 %% @doc Convert a commitment to a base TX record. Extracts the owner, signature,
 %% tags, and last TX from the commitment. If the value is not present, the
@@ -204,13 +188,7 @@ data_messages(TABM, Opts) when is_map(TABM) ->
 %% keys to use from the commitment.
 tags(#tx{ tags = ExistingTags }, _, _, _, _) when ExistingTags =/= [] ->
     ExistingTags;
-tags(TX, Device, TABM, ExcludedTagKeys, Opts) ->
-    MaybeCommitment =
-        hb_message:commitment(
-            #{ <<"commitment-device">> => Device },
-            TABM,
-            Opts
-        ),
+tags(TX, MaybeCommitment, TABM, ExcludedTagKeys, Opts) ->
     CommittedTagKeys = committed_tag_keys(MaybeCommitment, TABM, Opts),
     DataKeysToExclude =
         case TX#tx.data of
@@ -237,14 +215,9 @@ committed_tag_keys({ok, _, Commitment}, TABM, Opts) ->
         fun(CommittedKey) ->
             NormalizedKey = hb_ao:normalize_key(CommittedKey),
             BaseKey = hb_link:remove_link_specifier(NormalizedKey),
-            case hb_maps:find(BaseKey, TABM, Opts) of
-                {ok, _} -> BaseKey;
-                error ->
-                    BaseKeyLink = <<BaseKey/binary, "+link">>,
-                    case hb_maps:find(BaseKeyLink, TABM, Opts) of
-                        {ok, _} -> BaseKeyLink;
-                        error -> BaseKey
-                    end
+            case dev_arweave_common:find_key(BaseKey, TABM, Opts) of
+                error -> BaseKey;
+                {FoundKey, _} -> FoundKey
             end
         end,
         hb_util:message_to_ordered_list(

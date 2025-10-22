@@ -306,6 +306,7 @@ post_ans104_tx_test() ->
         GetRes
     ),
     ok.
+
 get_tx_basic_data_test() ->
     Node = hb_http_server:start_node(),
     Path = <<"/~arweave@2.9-pre/tx?tx=ptBC0UwDmrUTBQX3MqZ1lB57ex20ygwzkjjCrQjIx3o">>,

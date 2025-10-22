@@ -85,10 +85,14 @@ data(Item, Req, Tags, Opts) ->
 %% @doc Calculate the list of committed keys for an item, based on its 
 %% components (fields, tags, and data).
 committed(FieldKeys, Item, Fields, Tags, Data, Opts) ->
-    hb_util:unique(
+    CommittedKeys = hb_util:unique(
         data_keys(Data, Opts) ++
         tag_keys(Item, Opts) ++
         field_keys(FieldKeys, Fields, Tags, Data, Opts)
+    ),
+    lists:map(
+        fun hb_link:remove_link_specifier/1,
+        CommittedKeys
     ).
 
 %% @doc Return the list of the keys from the fields TABM.
@@ -135,17 +139,17 @@ base(CommittedKeys, Fields, Tags, Data, Opts) ->
     hb_maps:from_list(
         lists:map(
             fun(Key) ->
-                case hb_maps:find(Key, Data, Opts) of
+                case dev_arweave_common:find_key(Key, Data, Opts) of
                     error ->
-                        case hb_maps:find(Key, Fields, Opts) of
+                        case dev_arweave_common:find_key(Key, Fields, Opts) of
                             error ->
-                                case hb_maps:find(Key, Tags, Opts) of
+                                case dev_arweave_common:find_key(Key, Tags, Opts) of
                                     error -> throw({missing_key, Key});
-                                    {ok, Value} -> {Key, Value}
+                                    {FoundKey, Value} -> {FoundKey, Value}
                                 end;
-                            {ok, Value} -> {Key, Value}
+                            {FoundKey, Value} -> {FoundKey, Value}
                         end;
-                    {ok, Value} -> {Key, Value}
+                    {FoundKey, Value} -> {FoundKey, Value}
                 end
             end,
             CommittedKeys

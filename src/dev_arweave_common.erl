@@ -1,7 +1,7 @@
 %%% @doc Utility module for routing functionality to ar_bundles.erl or
 %%% ar_tx.erl based off #tx.format.
 -module(dev_arweave_common).
--export([is_signed/1, type/1, tagfind/3]).
+-export([is_signed/1, type/1, tagfind/3, find_key/3]).
 -export([reset_ids/1, generate_id/2, normalize/1, serialize_data/1]).
 -export([convert_bundle_list_to_map/1, convert_bundle_map_to_list/1]).
 -include("include/hb.hrl").
@@ -33,6 +33,18 @@ tagfind(Key, Tags, Default) ->
     case Found of
         {value, {_TagName, Value}} -> Value;
         false -> Default
+    end.
+
+%% @doc Find a key potentially with a +link specifier
+find_key(Key, Map, Opts) ->
+    case hb_maps:find(Key, Map, Opts) of
+        {ok, Value} -> {Key, Value};
+        error ->
+            KeyLink = <<Key/binary, "+link">>,
+            case hb_maps:find(KeyLink, Map, Opts) of
+                {ok, Value} -> {KeyLink, Value};
+                error -> error
+            end
     end.
 
 %% @doc Re-calculate both of the IDs for a #tx. This is a wrapper
