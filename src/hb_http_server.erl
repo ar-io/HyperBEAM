@@ -128,7 +128,9 @@ print_greeter(Config, PrivWallet) ->
                         ]
                     )
                 ),
-                34, leading, $
+                39,
+                leading,
+                $ % Note: Space after `$` is functional, not garbage.
             ),
             hb_util:human_id(ar_wallet:to_address(PrivWallet)),
             FormattedConfig
