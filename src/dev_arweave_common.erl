@@ -99,44 +99,47 @@ normalize(TX = #tx{data = Bin}) when is_binary(Bin) ->
 normalize(Bundle) when is_list(Bundle); is_map(Bundle) ->
     ?event({normalize, bundle}),
     normalize(#tx{ data = Bundle });
-normalize(TX = #tx{data = Data}) ->
-    SerializedTX = serialize_data(TX, true),
-    NormalizedTX = case is_signed(TX) of
-        true ->
-            SerializedTX;
-        false ->
-            add_bundle_tags(SerializedTX)
-    end,
+normalize(TX) ->
+    ?event({normalize, TX}),
+    {ItemType, SerializedTX} = serialize_data(TX, true),
+    ?event({serialized_tx, ItemType, SerializedTX}),
+    NormalizedTX = maybe_add_bundle_tags(ItemType, SerializedTX),
+    ?event({normalized_tx, NormalizedTX}),
     normalize(NormalizedTX).
+
+%%% XXX TODO: look at these two is_signed checks - might need to do
+%%% has_manifest or similar
+%%% and perhaps it's codec:to where we can check for has_manifest?
 
 serialize_data(TX) -> serialize_data(TX, false).
 serialize_data(Item = #tx{data = Data}, _) when is_binary(Data) ->
-    Item;
+    {binary, Item};
 serialize_data(Item = #tx{data = Data}, NormalizeChildren) ->
-    IsBundleMap = type(Item) == map,
+    {BundleType, ConvertedData} = 
+        case {type(Item), is_list(Data), is_map(Data)} of
+            {map, true, false} ->
+                % Signed transaction with bundle-map tag and list data
+                {map, convert_bundle_list_to_map(Data)};
+            {list, false, true} ->
+                % Signed transaction without bundle-map tag and map data
+                {list, convert_bundle_map_to_list(Data)};
+            {_, true, false} ->
+                % Unsigned transaction with list data
+                {list, convert_bundle_list_to_map(Data)};
+            {_, false, true} ->
+                {map, Data};
+            _ ->
+                {binary, Data}
+        end,
     ?event({serialize_data,
         hb_util:human_id(Item#tx.unsigned_id), hb_util:human_id(Item#tx.id),
         {normalize_children, NormalizeChildren},
-        {is_bundle_map, IsBundleMap},
+        {type, BundleType},
         {is_list, is_list(Data)},
         {is_map, is_map(Data)}}),
-    ConvertedData = 
-        case {is_signed(Item), IsBundleMap, is_list(Data), is_map(Data)} of
-            {true, true, true, false} ->
-                % Signed transaction with bundle-map tag and list data
-                convert_bundle_list_to_map(Data);
-            {true, false, false, true} ->
-                % Signed transaction without bundle-map tag and map data
-                convert_bundle_map_to_list(Data);
-            {false, _, true, false} ->
-                % Unsigned transaction with list data
-                convert_bundle_list_to_map(Data);
-            _ ->
-                Data
-        end,
     {Manifest, SerializedData} =
-        ar_bundles:serialize_bundle(ConvertedData, NormalizeChildren),
-    Item#tx{data = SerializedData, manifest = Manifest}.
+        ar_bundles:serialize_bundle(BundleType, ConvertedData, NormalizeChildren),
+    {BundleType, Item#tx{data = SerializedData, manifest = Manifest}}.
 
 convert_bundle_list_to_map(Data) ->
     maps:from_list(
@@ -160,16 +163,26 @@ convert_bundle_map_to_list(Data) ->
         lists:seq(1, maps:size(Data))
     ).
 
-add_bundle_tags(TX) -> 
-    ManifestID = ar_bundles:id(TX#tx.manifest, unsigned),
-    BundleTags = ?BUNDLE_TAGS ++ [{<<"bundle-map">>, hb_util:encode(ManifestID)}],
-    StrippedTags = lists:filter(
+maybe_add_bundle_tags(BundleType, TX) -> 
+    BundleTags = case BundleType of
+        binary ->
+            % Item is either not a bundle, or if it is a bundle that has
+            % been serialized to binary, it should already have bundle tags.
+            [];
+        list ->
+            ?BUNDLE_TAGS;
+        map ->
+            ManifestID = ar_bundles:id(TX#tx.manifest, unsigned),
+            ?BUNDLE_TAGS ++ [{<<"bundle-map">>, hb_util:encode(ManifestID)}]
+    end,
+    ExistingTagNames = [hb_util:to_lower(TagName) || {TagName, _} <- TX#tx.tags],
+    FilteredBundleTags = lists:filter(
         fun({TagName, _}) ->
-            not lists:member(hb_util:to_lower(TagName), ?BUNDLE_KEYS)
+            not lists:member(hb_util:to_lower(TagName), ExistingTagNames)
         end,
-        TX#tx.tags
+        BundleTags
     ),
-    TX#tx{tags = BundleTags ++ StrippedTags}.
+    TX#tx{tags = FilteredBundleTags ++ TX#tx.tags }.
 
 %% @doc Reset the data size of a data item. Assumes that the data is already normalized.
 normalize_data_size(Item = #tx{data = Bin}) when is_binary(Bin) ->

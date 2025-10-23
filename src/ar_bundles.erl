@@ -3,7 +3,7 @@
 -export([id/1, id/2, hd/1, member/2, find/2]).
 -export([new_item/4, sign_item/2, verify_item/1]).
 -export([encode_tags/1, decode_tags/1]).
--export([serialize/1, deserialize/1, serialize_bundle/2]).
+-export([serialize/1, deserialize/1, serialize_bundle/3]).
 -export([data_item_signature_data/1]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -180,7 +180,7 @@ enforce_valid_tx(TX) ->
 %% @doc Generate the data segment to be signed for a data item.
 data_item_signature_data(RawItem) ->
     true = enforce_valid_tx(RawItem),
-    Item = dev_arweave_common:serialize_data(RawItem),
+    {_, Item} = dev_arweave_common:serialize_data(RawItem),
     ar_deep_hash:hash([
         utf8_encoded("dataitem"),
         utf8_encoded("1"),
@@ -221,7 +221,7 @@ serialize(not_found) -> throw(not_found);
 serialize(TX) when is_binary(TX) -> TX;
 serialize(RawTX) when is_record(RawTX, tx) ->
     true = enforce_valid_tx(RawTX),
-    TX = dev_arweave_common:serialize_data(RawTX),
+    {_, TX} = dev_arweave_common:serialize_data(RawTX),
     EncodedTags = encode_tags(TX#tx.tags),
     <<
         (encode_signature_type(TX#tx.signature_type))/binary,
@@ -236,39 +236,39 @@ serialize(RawTX) when is_record(RawTX, tx) ->
 serialize(TX) ->
     throw({cannot_serialize_tx, must_be_binary_or_tx, TX}).
 
-serialize_bundle(List, Normalize) when is_list(List) ->
+serialize_bundle(list, List, Normalize) when is_list(List) ->
     FinalizedData = finalize_bundle_data(
         lists:map(
             fun(Item) ->
-                {UnsignedID, SignedID, Serialized} =
-                    to_serialized_pair(Item, Normalize),
-                {SignedID, Serialized}
+                to_serialized_pair(Item, Normalize, signed)
             end,
             List)
     ),
     {undefined, FinalizedData};
-serialize_bundle(Map, Normalize) when is_map(Map) ->
+serialize_bundle(BundleType, Map, Normalize) when is_map(Map) ->
     % TODO: Make this compatible with the normal manifest spec.
     % For now we just serialize the map to a JSON string of Key=>TXID
     BinItems = maps:map(
         fun(_, Item) -> 
-            {UnsignedID, SignedID, Serialized} =
-                to_serialized_pair(Item, Normalize),
-            {UnsignedID, Serialized}
+            to_serialized_pair(Item, Normalize, unsigned)
         end,
         Map),
-    Index = maps:map(fun(_, {TXID, _}) -> hb_util:encode(TXID) end, BinItems),
-    NewManifest = new_manifest(Index),
-    {NewManifestUnsignedID, NewManifestSignedID, NewManifestSerialized} =
-        to_serialized_pair(NewManifest, Normalize),
-    %?event({generated_manifest, NewManifest == Manifest, hb_util:encode(id(NewManifest, unsigned)), Index}),
-    FinalizedData = finalize_bundle_data(
-        [{NewManifestUnsignedID, NewManifestSerialized} | maps:values(BinItems)]),
-    {NewManifest, FinalizedData};
-serialize_bundle(Data, _Normalize) when is_binary(Data) ->
+    {Manifest, BinItems2} = maybe_generate_manifest(BundleType, BinItems, Normalize),
+    FinalizedData = finalize_bundle_data(BinItems2),
+    {Manifest, FinalizedData};
+serialize_bundle(_, Data, _Normalize) when is_binary(Data) ->
     {undefined, Data};
-serialize_bundle(Data, _Normalize) ->
-    throw({cannot_serialize_tx_data, must_be_list_or_map, Data}).
+serialize_bundle(_, Data, _Normalize) ->
+    throw({cannot_serialize_tx_data, must_be_list_or_map_or_binary, Data}).
+
+maybe_generate_manifest(map, BinItems, Normalize) ->
+    Index = maps:map(fun(_, {TXID, _}) -> hb_util:encode(TXID) end, BinItems),
+    Manifest = new_manifest(Index),
+    {ManifestID, ManifestSerialized} =
+        to_serialized_pair(Manifest, Normalize, unsigned),
+    {Manifest, [{ManifestID, ManifestSerialized} | maps:values(BinItems)]};
+maybe_generate_manifest(_, BinItems, _Normalize) ->
+    {undefined, maps:values(BinItems)}.
 
 finalize_bundle_data(Processed) ->
     Length = <<(length(Processed)):256/little-integer>>,
@@ -288,24 +288,28 @@ new_manifest(Index) ->
     }),
     TX.
 
-to_serialized_pair(Item, Normalize) when is_binary(Item) ->
+to_serialized_pair(Item, Normalize, Signed) when is_binary(Item) ->
     % Support bundling of bare binary payloads by wrapping them in a TX that
     % is explicitly marked as a binary data item.
     to_serialized_pair(
-        #tx{ tags = [{<<"ao-type">>, <<"binary">>}], data = Item }, Normalize);
-to_serialized_pair(Item, true) ->
-    to_serialized_pair(dev_arweave_common:normalize(Item), false);
-to_serialized_pair(Item, false) ->
-    ?event({to_serialized_pair, Item}),
+        #tx{ tags = [{<<"ao-type">>, <<"binary">>}], data = Item },
+        Normalize, Signed);
+to_serialized_pair(Item, true, Signed) ->
+    to_serialized_pair(dev_arweave_common:normalize(Item), false, Signed);
+to_serialized_pair(Item, false, Signed) ->
+    ?event(debug_test, {to_serialized_pair, Item}),
     % TODO: This is a hack to get the ID of the item. We need to do this because we may not
     % have the ID in 'item' if it is just a map/list. We need to make this more efficient.
     Serialized = serialize(Item),
     Deserialized = deserialize(Serialized),
-    UnsignedID = id(Deserialized, unsigned),
-    SignedID = id(Deserialized, signed),
-    ?event({serialized_pair,
-        {unsigned_id, UnsignedID}, {signed_id, SignedID}, {size, byte_size(Serialized)}}),
-    {UnsignedID, SignedID, Serialized}.
+    case id(Deserialized, Signed) of
+        not_signed ->
+            % A signed ID was requested, but the item is not signed, so fall
+            % back to unsigned.
+            {id(Deserialized, unsigned), Serialized};
+        ID ->
+            {ID, Serialized}
+    end.
 
 %% @doc Only RSA 4096 is currently supported.
 %% Note: the signature type '1' corresponds to RSA 4096 -- but it is is written in
