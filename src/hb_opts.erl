@@ -363,7 +363,6 @@ default_message() ->
         },
         genesis_wasm_import_authorities =>
             [
-                <<"fcoN_xJeisVsPXA-trzVAuIiqO3ydLQxM-L4XbrQKzY">>,
                 <<"WjnS-s03HWsDSdMnyTdzB1eHZB2QheUWP_FVRVYxkXk">>
             ]
         % Should the node track and expose prometheus metrics?
