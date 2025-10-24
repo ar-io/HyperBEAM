@@ -85,12 +85,11 @@ data(Item, Req, Tags, Opts) ->
 %% @doc Calculate the list of committed keys for an item, based on its 
 %% components (fields, tags, and data).
 committed(FieldKeys, Item, Fields, Tags, Data, Opts) ->
-    CommittedKeys = lists:sort(
-        hb_util:unique(
-            data_keys(Data, Opts) ++
-            tag_keys(Item, Opts) ++
-            field_keys(FieldKeys, Fields, Tags, Data, Opts)
-        )),
+    CommittedKeys = hb_util:unique(
+        data_keys(Data, Opts) ++
+        tag_keys(Item, Opts) ++
+        field_keys(FieldKeys, Fields, Tags, Data, Opts)
+    ),
     lists:map(
         fun hb_link:remove_link_specifier/1,
         CommittedKeys
@@ -113,10 +112,7 @@ data_keys(Data, Opts) ->
 
 %% @doc Return the list of the keys from the tags TABM. Filter all metadata
 %% tags: `ao-data-key', `ao-types', `bundle-format', `bundle-version'.
-tag_keys(Item, _Opts) when is_record(Item, tx) ->
-    tag_keys(Item#tx.tags).
-    
-tag_keys(Tags) ->
+tag_keys(Item, _Opts) ->
     MetaTags = [
         <<"bundle-format">>,
         <<"bundle-version">>,
@@ -131,7 +127,7 @@ tag_keys(Tags) ->
                 false -> {true, NormalizedTag}
             end
         end,
-        Tags
+        Item#tx.tags
     ).
 
 %% @doc Return the complete message for an item, less its commitments. The
@@ -245,18 +241,15 @@ bundle_commitment_key(Tags, Opts) ->
 
 %% @doc Check whether a list of key-value pairs contains only normalized keys.
 normal_tags(Tags) ->
-    AllLowercase = lists:all(
+    lists:all(
         fun({Key, _}) ->
             hb_util:to_lower(hb_ao:normalize_key(Key)) =:= Key
         end,
         Tags
-    ),
-    Keys = tag_keys(Tags),
-    Sorted = lists:sort(Keys) =:= Keys,
-    AllLowercase andalso Sorted.
+    ).
 
 %% @doc Return the original tags of an item if it is applicable. Otherwise,
-%% return `unset'.
+%% return `undefined'.
 original_tags(Item, _Opts) ->
     case normal_tags(Item#tx.tags) of
         true -> unset;

@@ -655,7 +655,7 @@ signed_lowercase_bundle_map_tags_test() ->
         hb_util:human_id(SignedTX#tx.id), SignedTABM),
     ?event({commitment, Commitment}),
     ExpectedCommitment = #{
-        <<"committed">> => [<<"a1">>, <<"c1">>, <<"data">>],
+        <<"committed">> => [<<"data">>, <<"a1">>, <<"c1">>],
         <<"bundle-format">> => <<"binary">>,
         <<"bundle-version">> => <<"2.0.0">>,
         <<"bundle-map">> => <<"JmtD0fwFqJTK4P_XexVqBQdnDc0-C7FFIOge6GEOJE8">>

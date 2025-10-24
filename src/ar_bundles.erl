@@ -297,7 +297,7 @@ to_serialized_pair(Item, Normalize, Signed) when is_binary(Item) ->
 to_serialized_pair(Item, true, Signed) ->
     to_serialized_pair(dev_arweave_common:normalize(Item), false, Signed);
 to_serialized_pair(Item, false, Signed) ->
-    ?event({to_serialized_pair, Item}),
+    ?event(debug_test, {to_serialized_pair, Item}),
     % TODO: This is a hack to get the ID of the item. We need to do this because we may not
     % have the ID in 'item' if it is just a map/list. We need to make this more efficient.
     Serialized = serialize(Item),
