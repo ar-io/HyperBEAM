@@ -370,9 +370,8 @@ happy_tx_test() ->
     SignedCommitment = #{
         <<"commitment-device">> => <<"tx@1.0">>,
         <<"committed">> => [
-            <<"data">>, <<"tag1">>, <<"tag2">>, <<"type">>,
-            <<"anchor">>,
-            <<"quantity">>, <<"reward">>, <<"target">>],
+            <<"anchor">>, <<"data">>, <<"quantity">>, <<"reward">>,
+            <<"tag1">>, <<"tag2">>, <<"target">>, <<"type">>],
         <<"type">> => <<"rsa-pss-sha256">>,
         <<"bundle">> => <<"false">>,
         <<"field-target">> => hb_util:encode(Target),
@@ -534,13 +533,63 @@ unsorted_tags_test() ->
             {<<"a">>, <<"position-2">>}
         ]
     },
+    UnsignedID = dev_arweave_common:generate_id(TX, unsigned),
     UnsignedTABM = #{
         <<"z">> => <<"position-1">>,
-        <<"a">> => <<"position-2">>
+        <<"a">> => <<"position-2">>,
+        <<"commitments">> => #{
+            hb_util:encode(UnsignedID) => #{
+                <<"commitment-device">> => <<"tx@1.0">>,
+                <<"committed">> => [<<"a">>, <<"z">>],
+                <<"type">> => <<"unsigned-sha256">>,
+                <<"bundle">> => <<"false">>,
+                <<"original-tags">> => #{
+                    <<"1">> => #{
+                        <<"name">> => <<"z">>,
+                        <<"value">> => <<"position-1">>
+                    },
+                    <<"2">> => #{
+                        <<"name">> => <<"a">>,
+                        <<"value">> => <<"position-2">>
+                    }
+                }
+            }
+        }
     },
     SignedCommitment = #{
         <<"commitment-device">> => <<"tx@1.0">>,
-        <<"committed">> => [<<"z">>, <<"a">>],
+        <<"committed">> => [<<"a">>, <<"z">>],
+        <<"type">> => <<"rsa-pss-sha256">>,
+        <<"bundle">> => <<"false">>,
+        <<"original-tags">> => #{
+            <<"1">> => #{
+                <<"name">> => <<"z">>,
+                <<"value">> => <<"position-1">>
+            },
+            <<"2">> => #{
+                <<"name">> => <<"a">>,
+                <<"value">> => <<"position-2">>
+            }
+        }
+    },
+    do_tx_roundtrips(TX, UnsignedTABM, SignedCommitment, #{}).
+    % do_signed_tx_roundtrip(TX, UnsignedTABM, SignedCommitment, #{}).
+
+no_original_tags_test() ->
+    TX = #tx{
+        format = 2,
+        tags = [
+            {<<"a">>, <<"position-1">>},
+            {<<"z">>, <<"position-2">>}
+        ]
+    },
+    UnsignedTABM = #{
+        <<"a">> => <<"position-1">>,
+        <<"z">> => <<"position-2">>
+    },
+    SignedCommitment = #{
+        <<"commitment-device">> => <<"tx@1.0">>,
+        <<"committed">> => [<<"a">>, <<"z">>],
         <<"type">> => <<"rsa-pss-sha256">>,
         <<"bundle">> => <<"false">>
     },
@@ -548,7 +597,7 @@ unsorted_tags_test() ->
     % for messages without a commitment. And since this test case doesn't
     % require an original-tags commitment, no unsigned commitment will be
     % generated.
-    do_signed_tx_roundtrip(TX, UnsignedTABM, SignedCommitment, false).
+    do_signed_tx_roundtrip(TX, UnsignedTABM, SignedCommitment, #{}).
 
 nested_data_tabm_test() ->
     UnsignedTABM = #{
