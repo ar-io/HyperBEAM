@@ -548,7 +548,7 @@ unsorted_tags_test() ->
     % for messages without a commitment. And since this test case doesn't
     % require an original-tags commitment, no unsigned commitment will be
     % generated.
-    do_signed_tx_roundtrip(TX, UnsignedTABM, SignedCommitment, false).
+    do_signed_tx_roundtrip(TX, UnsignedTABM, SignedCommitment, #{}).
 
 nested_data_tabm_test() ->
     UnsignedTABM = #{
