@@ -204,7 +204,7 @@ id(Msg, RawCommitters, Opts) ->
 normalize_commitments(Msg, Opts) ->
     normalize_commitments(Msg, Opts, passive).
 normalize_commitments(Msg, Opts, Mode) when is_map(Msg) ->
-    ?event(debug_normalize_commitments, {normalize_commitments, {msg, Msg}}),
+    ?event(debug_normalize_commitments, {normalize_commitments, {msg, Msg}, {mode, Mode}}),
     NormMsg = 
         maps:map(
             fun(Key, Val) when Key == <<"commitments">> orelse Key == <<"priv">> ->
@@ -220,6 +220,8 @@ normalize_commitments(Msg, Opts, Mode) when is_list(Msg) ->
 normalize_commitments(Msg, _Opts, _Mode) ->
     Msg.
 
+do_normalize_commitments(Msg, _Opts, _Mode) when ?IS_EMPTY_MESSAGE(Msg) ->
+        Msg;
 do_normalize_commitments(Msg, Opts, passive) ->
     ?event(debug_normalize_commitments, {passive, {msg, Msg}}),
     case hb_maps:get(<<"commitments">>, Msg, not_found, Opts) of
@@ -233,22 +235,47 @@ do_normalize_commitments(Msg, Opts, passive) ->
             Msg#{ <<"commitments">> => Commitments };
         _ -> Msg
     end;
-do_normalize_commitments(Msg, _Opts, verify) when ?IS_EMPTY_MESSAGE(Msg) ->
-    Msg;
 do_normalize_commitments(Msg, Opts, verify) ->
+    UnsignedCommitment = commitment(#{ <<"type">> => <<"hmac-sha256">> }, Msg, Opts),
+    {MaybeUnsignedID, MaybeCommittedSpec} =
+        case UnsignedCommitment of
+            {ok, ID, #{ <<"committed">> := Committed }} ->
+                {ID, #{ <<"committed">> => Committed }};
+            _ -> {undefined, #{}}
+        end,
     {ok, #{ <<"commitments">> := NormCommitments }} =
         dev_message:commit(
             uncommitted(Msg),
-            #{ <<"type">> => <<"unsigned">> },
+            MaybeCommittedSpec#{ <<"type">> => <<"unsigned">>},
             Opts
         ),
     ?event(normalization, {normalizing_commitments, verify}),
     [NormID] = hb_maps:keys(NormCommitments, Opts),
-    MsgCommIDs = hb_maps:keys(hb_maps:get(<<"commitments">>, Msg, #{}, Opts), Opts),
-    case lists:member(NormID, MsgCommIDs) of
-        true -> Msg;
-        false ->
-            attach_phash2(Msg#{ <<"commitments">> => NormCommitments }, Opts)
+    case {MaybeUnsignedID, NormID} of
+        {MatchedID, MatchedID} ->
+            Msg;
+        {undefined, _NewID} ->
+            % We did not have an unsigned ID to begin with, so we need to add it.
+            attach_phash2(
+                Msg#{
+                    <<"commitments">> =>
+                        hb_maps:merge(
+                            NormCommitments,
+                            hb_maps:get(<<"commitments">>, Msg, #{}, Opts)
+                        )
+                },
+                Opts
+            );
+        {_OldID, _NewID} ->
+            {ok, #{ <<"commitments">> := NewCommitments }} = dev_message:commit(
+                uncommitted(Msg),
+                #{ <<"type">> => <<"unsigned">>},
+                Opts
+            ),
+            % We had an unsigned ID to begin with and the new one is different.
+            % This means that the committed keys have changed, so we drop any
+            % other commitments and return only the new unsigned one.
+            attach_phash2(Msg#{ <<"commitments">> => NewCommitments }, Opts)
     end;
 do_normalize_commitments(Msg, Opts, fast) when is_map(Msg) ->
     ExpectedHash = erlang:phash2(hb_private:reset(Msg)),
