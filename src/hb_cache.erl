@@ -847,8 +847,14 @@ test_store_simple_signed_message(Store) ->
     % ?assert(MatchRes),
     {ok, CommittedID} = dev_message:id(Item, #{ <<"committers">> => [Address] }, Opts),
     {ok, RetrievedItemSigned} = read(CommittedID, Opts),
-    ?event({retreived_signed_message, {expected, Item}, {got, RetrievedItemSigned}}),
-    MatchResSigned = hb_message:match(Item, RetrievedItemSigned, strict, Opts),
+    ?event({retrieved_signed_message, {expected, Item}, {got, RetrievedItemSigned}}),
+    MatchResSigned = 
+        hb_message:match(
+            Item,
+            hb_message:normalize_commitments(RetrievedItemSigned, Opts),
+            strict,
+            Opts
+        ),
     ?event({match_result_signed, MatchResSigned}),
     ?assert(MatchResSigned),
     ok.

@@ -223,16 +223,32 @@ normalize_commitments(Msg, _Opts, _Mode) ->
 do_normalize_commitments(Msg, _Opts, _Mode) when ?IS_EMPTY_MESSAGE(Msg) ->
         Msg;
 do_normalize_commitments(Msg, Opts, passive) ->
-    ?event(debug_normalize_commitments, {passive, {msg, Msg}}),
-    case hb_maps:get(<<"commitments">>, Msg, not_found, Opts) of
-        not_found ->
-            {ok, #{ <<"commitments">> := Commitments }} =
+    UnsignedCommitment = commitment(#{ <<"type">> => <<"hmac-sha256">> }, Msg, Opts),
+    MaybeSignedCommitment = commitment(#{ <<"type">> => <<"rsa-pss-sha512">> }, Msg, Opts),
+    case {UnsignedCommitment, MaybeSignedCommitment} of
+        {not_found, {ok, SignedCommitmentID, SignedCommitment}} ->
+            {ok, #{ <<"commitments">> := NewCommitment }} =
                 dev_message:commit(
-                    Msg,
-                    #{ <<"type">> => <<"unsigned">> },
+                    uncommitted(Msg),
+                    #{ 
+                        <<"type">> => <<"unsigned">>,
+                        <<"bundle">> => hb_maps:get(<<"bundle">>, Opts, false, Opts) 
+                    },
                     Opts
                 ),
-            Msg#{ <<"commitments">> => Commitments };
+            MergedCommitments = NewCommitment#{SignedCommitmentID => SignedCommitment},
+            Msg#{ <<"commitments">> => MergedCommitments };
+        {not_found, not_found} ->
+            {ok, #{ <<"commitments">> := NewCommitment }} =
+                dev_message:commit(
+                    uncommitted(Msg),
+                    #{ 
+                        <<"type">> => <<"unsigned">>,
+                        <<"bundle">> => hb_maps:get(<<"bundle">>, Opts, false, Opts) 
+                    },
+                    Opts
+                ),
+            Msg#{ <<"commitments">> => NewCommitment };
         _ -> Msg
     end;
 do_normalize_commitments(Msg, Opts, verify) ->
@@ -246,7 +262,10 @@ do_normalize_commitments(Msg, Opts, verify) ->
     {ok, #{ <<"commitments">> := NormCommitments }} =
         dev_message:commit(
             uncommitted(Msg),
-            MaybeCommittedSpec#{ <<"type">> => <<"unsigned">>},
+            MaybeCommittedSpec#{ 
+                <<"type">> => <<"unsigned">>,
+                <<"bundle">> => hb_maps:get(<<"bundle">>, Opts, false, Opts) 
+            },
             Opts
         ),
     ?event(normalization, {normalizing_commitments, verify}),
@@ -267,11 +286,15 @@ do_normalize_commitments(Msg, Opts, verify) ->
                 Opts
             );
         {_OldID, _NewID} ->
-            {ok, #{ <<"commitments">> := NewCommitments }} = dev_message:commit(
-                uncommitted(Msg),
-                #{ <<"type">> => <<"unsigned">>},
-                Opts
-            ),
+            {ok, #{ <<"commitments">> := NewCommitments }} = 
+                dev_message:commit(
+                    uncommitted(Msg),
+                    #{ 
+                        <<"type">> => <<"unsigned">>,
+                        <<"bundle">> => hb_maps:get(<<"bundle">>, Opts, false, Opts) 
+                    },
+                    Opts
+                ),
             % We had an unsigned ID to begin with and the new one is different.
             % This means that the committed keys have changed, so we drop any
             % other commitments and return only the new unsigned one.
