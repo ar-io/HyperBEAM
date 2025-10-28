@@ -9,8 +9,8 @@
 %% Disable/enable as needed.
 run_test() ->
     hb:init(),
-    signed_nested_message_with_child_test(
-        #{ <<"device">> => <<"httpsig@1.0">>, <<"bundle">> => true },
+    nested_empty_map_test(
+        <<"structured@1.0">>,
         test_opts(normal)
     ).
 
@@ -518,13 +518,9 @@ verify_nested_complex_signed_test(Codec, Opts) ->
     ?assert(MatchRes),
     ?assert(hb_message:verify(Decoded, all, Opts)),
     % % Ensure that both of the messages can be verified (and retreived).
-    NormalizeOpts = case is_map(Codec) of
-        true -> hb_maps:merge(Opts, Codec);
-        _ -> Opts
-    end,
     FoundInner = hb_message:normalize_commitments(
         hb_maps:get(<<"body">>, Msg, not_found, Opts),
-        NormalizeOpts
+        Opts
     ),
     LoadedFoundInner = hb_cache:ensure_all_loaded(FoundInner, Opts),
     % Verify that the fully loaded version of the inner message, and the one
@@ -602,25 +598,9 @@ signed_nested_message_with_child_test(Codec, Opts) ->
     hb_cache:write(Msg, Opts),
     Encoded = hb_message:convert(Msg, Codec, <<"structured@1.0">>, Opts),
     ?event({encoded, Encoded}),
-    NormalizeOpts = case is_map(Codec) of
-        true -> hb_maps:merge(Opts, Codec);
-        _ -> Opts
-    end,
-    Decoded = 
-        hb_message:normalize_commitments(
-            hb_cache:ensure_all_loaded(
-                hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
-                Opts
-            ),
-            NormalizeOpts
-        ),
-    
-    LoadedMsg = hb_message:normalize_commitments(
-        hb_cache:ensure_all_loaded(Msg, Opts),
-        NormalizeOpts
-    ),
-    ?event({matching, {input, LoadedMsg}, {output, Decoded}}),
-    MatchRes = hb_message:match(LoadedMsg, Decoded, primary, Opts),
+    Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
+    ?event({matching, {input, Msg}, {output, Decoded}}),
+    MatchRes = hb_message:match(Msg, Decoded, primary, Opts),
     ?event({match_result, MatchRes}),
     ?assert(MatchRes),
     ?assert(hb_message:verify(Decoded, all, Opts)).
@@ -1235,15 +1215,11 @@ signed_with_inner_signed_message_test(Codec, Opts) ->
     %?event({encoded_body, {string, hb_maps:get(<<"body">>, Encoded)}}, #{}),
     Decoded = hb_message:convert(Encoded, <<"structured@1.0">>, Codec, Opts),
     ?event({decoded, Decoded}),
-    NormalizeOpts = case is_map(Codec) of
-        true -> hb_maps:merge(Opts, Codec);
-        _ -> Opts
-    end,
 	{ok, InnerFromDecoded} =
         hb_message:with_only_committed(
             hb_message:normalize_commitments(
                 hb_maps:get(<<"inner">>, Decoded, not_found, Opts),
-                NormalizeOpts
+                Opts
             ),
             Opts
         ),
