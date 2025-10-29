@@ -512,7 +512,7 @@ uncommitted(Bin, _Opts) when is_binary(Bin) -> Bin;
 uncommitted(Msg, Opts) ->
     hb_maps:remove(<<"commitments">>, Msg, Opts).
 remove_all_commitments(Msg, Opts) ->
-        % Remove commitments at the current level
+    % Remove commitments at the current level
     MsgWithoutCommitments = hb_maps:remove(<<"commitments">>, Msg, Opts),
     % Recursively remove commitments from nested maps
     maps:map(
