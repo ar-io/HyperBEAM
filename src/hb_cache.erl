@@ -381,7 +381,22 @@ write_binary(Hashpath, Bin, Store, Opts) ->
 %% @doc Read the message at a path. Returns in `structured@1.0' format: Either a
 %% richly typed map or a direct binary.
 read(Path, Opts) ->
-    store_read(Path, hb_opts:get(store, no_viable_store, Opts), Opts).
+    StoreReadResult = store_read(Path, hb_opts:get(store, no_vifaable_store, Opts), Opts),
+    % TODO: Make the way to tell if it is a commitment message more robust.
+    NormRes = 
+        case StoreReadResult of 
+            {ok, Res} ->
+                case is_map(Res) 
+                    andalso maps:is_key(<<"commitment-device">>, Res) 
+                    andalso maps:is_key(<<"committed">>, Res) 
+                of
+                    true -> {ok, Res};
+                    false -> {ok, hb_message:normalize_commitments(Res, Opts, passive)}
+                end;
+            _ -> StoreReadResult
+        end,
+    ?event(jack2, {read, {path, Path}, {res, StoreReadResult}, {norm_res, NormRes}}),
+    NormRes.
 
 %% @doc Load all of the commitments for a message into memory.
 read_all_commitments(Msg, Opts) ->

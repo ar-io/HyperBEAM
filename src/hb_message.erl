@@ -251,7 +251,8 @@ do_normalize_commitments(Msg, Opts, passive) ->
         _ -> Msg
     end;
 do_normalize_commitments(Msg, Opts, verify) ->
-    UnsignedCommitment = commitment(#{ <<"type">> => <<"unsigned">> }, Msg, Opts),
+    % TODO: fix to be type: unsigned
+    UnsignedCommitment = commitment(#{ <<"type">> => <<"hmac-sha256">> }, Msg, Opts),
     {MaybeUnsignedID, MaybeCommittedSpec} =
         case UnsignedCommitment of
             {ok, ID, #{ <<"committed">> := Committed }} ->
@@ -555,7 +556,23 @@ match(Map1, Map2, Mode, Opts) ->
 
 %% @doc Match two maps, returning `true' if they match, or throwing an error
 %% if they do not.
-unsafe_match(Map1, Map2, Mode, Path, Opts) ->
+unsafe_match(RawMap1, RawMap2, Mode, Path, Opts) ->
+    {_, SignedCommitments1} = 
+        lists:partition(
+            fun({_, #{ <<"committer">> := _Committer }}) -> false;
+               ({_, _}) -> true
+            end,
+            hb_maps:to_list(hb_maps:get(<<"commitments">>, RawMap1, #{}, Opts))
+        ),
+    {_, SignedCommitments2} = 
+        lists:partition(
+            fun({_, #{ <<"committer">> := _Committer }}) -> false;
+               ({_, _}) -> true
+            end,
+            hb_maps:to_list(hb_maps:get(<<"commitments">>, RawMap1, #{}, Opts))
+        ),
+    Map1 = RawMap1#{ <<"commitments">> => SignedCommitments1 },
+    Map2 = RawMap2#{ <<"commitments">> => SignedCommitments2 },
     Keys1 =
         hb_maps:keys(
             NormMap1 = hb_util:lower_case_key_map(minimize(
@@ -589,7 +606,8 @@ unsafe_match(Map1, Map2, Mode, Path, Opts) ->
     case (Keys1 == Keys2) or (Mode == only_present) or PrimaryKeysPresent of
         true ->
             lists:all(
-                fun(Key) ->
+                fun(<<"commitments">>) -> true;
+                (Key) ->
                     ?event(match, {matching_key, Key}),
                     Val1 =
                         hb_ao:normalize_keys(
