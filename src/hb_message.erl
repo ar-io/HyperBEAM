@@ -513,17 +513,25 @@ match(Map1, Map2, Mode, Opts) ->
 unsafe_match(Map1, Map2, Mode, Path, Opts) ->
     Keys1 =
         hb_maps:keys(
-            NormMap1 = hb_util:lower_case_key_map(minimize(
-                normalize(hb_ao:normalize_keys(Map1, Opts), Opts),
-                [<<"content-type">>, <<"ao-body-key">>]
-            ), Opts)
+            NormMap1 =
+                minimize(
+                    normalize(
+                        hb_ao:normalize_keys(Map1, Opts),
+                        Opts
+                    ),
+                    [<<"content-type">>, <<"ao-body-key">>]
+                )
         ),
     Keys2 =
         hb_maps:keys(
-            NormMap2 = hb_util:lower_case_key_map(minimize(
-                normalize(hb_ao:normalize_keys(Map2, Opts), Opts),
-                [<<"content-type">>, <<"ao-body-key">>]
-            ), Opts)
+            NormMap2 =
+                minimize(
+                    normalize(
+                        hb_ao:normalize_keys(Map2, Opts),
+                        Opts
+                    ),
+                    [<<"content-type">>, <<"ao-body-key">>]
+                )
         ),
     PrimaryKeysPresent =
         (Mode == primary) andalso

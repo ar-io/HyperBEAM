@@ -25,7 +25,7 @@
 -export([unquote/1, split_escaped_single/2]).
 -export([check_size/2, check_value/2, check_type/2, ok_or_throw/3]).
 -export([all_atoms/0, binary_is_atom/1]).
--export([lower_case_key_map/2]).
+-export([lower_case_keys/2]).
 -include("include/hb.hrl").
 
 
@@ -731,10 +731,21 @@ atom_from_int(Int) ->
 binary_is_atom(X) ->
     lists:member(X, lists:map(fun hb_util:bin/1, all_atoms())).
 
-lower_case_key_map(Map, Opts) ->
-    hb_maps:fold(fun
-        (K, V, Acc) when is_map(V) ->
-            maps:put(hb_util:to_lower(K), lower_case_key_map(V, Opts), Acc);
-        (K, V, Acc) ->
-            maps:put(hb_util:to_lower(K), V, Acc)
-    end, #{}, Map, Opts).
+%% @doc Convert all keys in a message or map to lowercase.
+%% Note: Recursively forces load of _all_ keys in the map recursively for 
+%% conversion.
+lower_case_keys(Map, Opts) ->
+    hb_maps:fold(
+        fun(K, V, Acc) ->
+            maps:put(
+                to_lower(K),
+                if is_map(V) -> lower_case_keys(V, Opts);
+                true -> V
+                end,
+                Acc
+            )
+        end,
+        #{},
+        Map,
+        Opts
+    ).
