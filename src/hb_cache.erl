@@ -989,12 +989,21 @@ test_match_linked_message(Store) ->
     {ok, [MatchedID]} = match(#{ <<"b">> => <<"c">> }, Opts),
     {ok, Read1} = read(MatchedID, Opts),
     ?assertEqual(
-        #{ <<"b">> => <<"c">>, <<"d">> => <<"e">> },
+        hb_message:normalize_commitments(
+            #{ <<"b">> => <<"c">>, <<"d">> => <<"e">> },
+            Opts
+        ),
         hb_cache:ensure_all_loaded(Read1, Opts)
     ),
     {ok, [MatchedID2]} = match(#{ <<"a">> => Inner }, Opts),
     {ok, Read2} = read(MatchedID2, Opts),
-    ?assertEqual(#{ <<"a">> => Inner }, ensure_all_loaded(Read2, Opts)).
+    ?assertEqual(
+        hb_message:normalize_commitments(
+            #{ <<"a">> => Inner },
+            Opts
+        ),
+        ensure_all_loaded(Read2, Opts)
+    ).
 
 test_match_typed_message(Store) when map_get(<<"store-module">>, Store) =/= hb_store_lmdb ->
     skip;
@@ -1014,10 +1023,16 @@ test_match_typed_message(Store) ->
     {ok, _ID} = write(Msg, Opts),
     {ok, [MatchedID]} = match(#{ <<"int-key">> => 1337 }, Opts),
     {ok, Read1} = read(MatchedID, Opts),
-    ?assertEqual(Msg, ensure_all_loaded(Read1, Opts)),
+    ?assertEqual(
+        hb_message:normalize_commitments(Msg, Opts),
+        ensure_all_loaded(Read1, Opts)
+    ),
     {ok, [MatchedID2]} = match(#{ <<"atom-key">> => atom }, Opts),
     {ok, Read2} = read(MatchedID2, Opts),
-    ?assertEqual(Msg, ensure_all_loaded(Read2, Opts)).
+    ?assertEqual(
+        hb_message:normalize_commitments(Msg, Opts),
+        ensure_all_loaded(Read2, Opts)
+    ).
 
 cache_suite_test_() ->
     hb_store:generate_test_suite([
@@ -1052,4 +1067,4 @@ test_device_map_cannot_be_written_test() ->
 %% @doc Run a specific test with a given store module.
 run_test() ->
     Store = hb_test_utils:test_store(hb_store_lmdb),
-    test_match_message(Store).
+    test_match_typed_message(Store).
