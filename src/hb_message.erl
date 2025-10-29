@@ -254,7 +254,6 @@ do_normalize_commitments(Msg, Opts, passive) ->
         _ -> Msg
     end;
 do_normalize_commitments(Msg, Opts, verify) ->
-    % TODO: fix to be type: unsigned
     UnsignedCommitment = commitment(#{ <<"type">> => <<"unsigned">> }, Msg, Opts),
     {MaybeUnsignedID, MaybeCommittedSpec} =
         case UnsignedCommitment of
