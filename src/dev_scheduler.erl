@@ -1996,7 +1996,7 @@ http_get_schedule_test_() ->
 		{ok, Schedule} = http_get_schedule(Node, PMsg, 0, 10),
 		Assignments = hb_ao:get(<<"assignments">>, Schedule, Opts),
 		?assertEqual(
-			12, % +1 for the hashpath
+			13, % 11 assignments, +1 for the hashpath, +1 for the commitments
 			hb_maps:size(Assignments, Opts)
 		)
 	end}.
@@ -2027,7 +2027,8 @@ http_get_legacy_schedule_slot_range_test_() ->
             "&from=0&to=10">>, Opts),
 		LoadedRes = hb_cache:ensure_all_loaded(Res, Opts),
         ?event({res, LoadedRes}),
-        ?assertMatch(#{ <<"assignments">> := As } when map_size(As) == 11, LoadedRes)
+        % 11 assignments, +1 for the commitments
+        ?assertMatch(#{ <<"assignments">> := As } when map_size(As) == 12, LoadedRes)
     end}.
 
 http_get_legacy_schedule_as_aos2_test_() ->

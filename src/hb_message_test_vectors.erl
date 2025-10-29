@@ -9,8 +9,8 @@
 %% Disable/enable as needed.
 run_test() ->
     hb:init(),
-    encode_small_balance_table_test(
-        #{ <<"device">> => <<"httpsig@1.0">> },
+    nested_empty_map_test(
+        <<"structured@1.0">>,
         test_opts(normal)
     ).
 
@@ -518,10 +518,15 @@ verify_nested_complex_signed_test(Codec, Opts) ->
     ?assert(MatchRes),
     ?assert(hb_message:verify(Decoded, all, Opts)),
     % % Ensure that both of the messages can be verified (and retreived).
-    FoundInner = hb_maps:get(<<"body">>, Msg, not_found, Opts),
+    FoundInner =
+        hb_message:normalize_commitments(
+            hb_maps:get(<<"body">>, Msg, not_found, Opts),
+            Opts
+        ),
     LoadedFoundInner = hb_cache:ensure_all_loaded(FoundInner, Opts),
     % Verify that the fully loaded version of the inner message, and the one
     % gained by applying `hb_maps:get` match and verify.
+    ?event({match,{inner, Inner}, {found_inner, FoundInner}}),
     ?assert(hb_message:match(Inner, FoundInner, primary, Opts)),
     ?assert(hb_message:match(FoundInner, LoadedFoundInner, primary, Opts)),
     ?assert(hb_message:verify(Inner, all, Opts)),
@@ -1213,7 +1218,10 @@ signed_with_inner_signed_message_test(Codec, Opts) ->
     ?event({decoded, Decoded}),
 	{ok, InnerFromDecoded} =
         hb_message:with_only_committed(
-            hb_maps:get(<<"inner">>, Decoded, not_found, Opts),
+            hb_message:normalize_commitments(
+                hb_maps:get(<<"inner">>, Decoded, not_found, Opts),
+                Opts
+            ),
             Opts
         ),
     ?event({verify_inner, {original, InnerSigned}, {from_decoded, InnerFromDecoded}}),
