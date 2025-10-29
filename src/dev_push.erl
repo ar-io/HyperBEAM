@@ -185,7 +185,7 @@ do_push(PrimaryProcess, Assignment, Opts) ->
                                 <<"message">> => Msg
                             }
                     end,
-                    hb_util:lower_case_key_map(
+                    hb_util:lower_case_keys(
                         hb_ao:normalize_keys(hb_private:reset(Outbox)),
                         Opts
                     ),
@@ -239,7 +239,7 @@ maybe_evaluate_message(Message, Opts) ->
 %% the slot number from which it was sent, and the outbox key of the message,
 %% and the depth to which downstream results should be included in the message.
 push_result_message(TargetProcess, MsgToPush, Origin, Opts) ->
-    NormMsgToPush = hb_util:lower_case_key_map(MsgToPush, Opts),
+    NormMsgToPush = hb_ao:normalize_keys(MsgToPush, Opts),
     case hb_ao:get(<<"target">>, NormMsgToPush, undefined, Opts) of
         undefined ->
             ?event(push,
