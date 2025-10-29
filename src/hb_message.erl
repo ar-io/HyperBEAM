@@ -204,7 +204,7 @@ id(Msg, RawCommitters, Opts) ->
 normalize_commitments(Msg, Opts) ->
     normalize_commitments(Msg, Opts, passive).
 normalize_commitments(Msg, Opts, Mode) when is_map(Msg) ->
-    ?event(debug_normalize_commitments, {normalize_commitments, {msg, Msg}, {mode, Mode}}),
+    ?event(debug_normalize_commitments, {normalize_commitments, {msg, Msg}}),
     NormMsg = 
         maps:map(
             fun(Key, Val) when Key == <<"commitments">> orelse Key == <<"priv">> ->
@@ -231,7 +231,10 @@ do_normalize_commitments(Msg, Opts, passive) ->
             end,
             hb_maps:to_list(Commitments)
         ),
-    ?event({do_normalize_commitments, {unsigned_commitments, UnsignedCommitments}, {maybe_signed_commitment, SignedCommitments}}),
+    ?event({do_normalize_commitments,
+        {unsigned_commitments, UnsignedCommitments},
+        {maybe_signed_commitment, SignedCommitments}
+    }),
     case {UnsignedCommitments, SignedCommitments} of
         {[], _} ->
             {ok, #{ <<"commitments">> := NewCommitments }} =
@@ -252,7 +255,7 @@ do_normalize_commitments(Msg, Opts, passive) ->
     end;
 do_normalize_commitments(Msg, Opts, verify) ->
     % TODO: fix to be type: unsigned
-    UnsignedCommitment = commitment(#{ <<"type">> => <<"hmac-sha256">> }, Msg, Opts),
+    UnsignedCommitment = commitment(#{ <<"type">> => <<"unsigned">> }, Msg, Opts),
     {MaybeUnsignedID, MaybeCommittedSpec} =
         case UnsignedCommitment of
             {ok, ID, #{ <<"committed">> := Committed }} ->
@@ -777,6 +780,24 @@ commitment(ID, #{ <<"commitments">> := Commitments }, Opts)
         not_found,
         Opts
     );
+commitment(#{ <<"type">> := <<"unsigned">> }, Msg, Opts) ->
+    Commitments = hb_maps:get(<<"commitments">>, Msg, #{}, Opts),
+    UnsignedCommitments =
+        hb_maps:filter(
+            fun(_, #{ <<"committer">> := _Committer }) -> false;
+                (_, _) -> true
+            end,
+            Commitments,
+            Opts
+        ),
+    if 
+        map_size(UnsignedCommitments) == 0 -> not_found;
+        map_size(UnsignedCommitments) == 1 ->
+            CommID = hd(maps:keys(UnsignedCommitments)),
+            {ok, CommID, hb_util:ok(hb_maps:find(CommID, UnsignedCommitments, Opts))};
+        true ->
+            ?event(commitment, {multiple_matches, {matches, UnsignedCommitments}}),
+            multiple_matches    end;
 commitment(Spec, Msg, Opts) ->
     Matches = commitments(Spec, Msg, Opts),
     ?event(debug_commitment, {commitment, {spec, Spec}, {matches, Matches}}),

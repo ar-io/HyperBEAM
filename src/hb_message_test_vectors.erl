@@ -518,10 +518,11 @@ verify_nested_complex_signed_test(Codec, Opts) ->
     ?assert(MatchRes),
     ?assert(hb_message:verify(Decoded, all, Opts)),
     % % Ensure that both of the messages can be verified (and retreived).
-    FoundInner = hb_message:normalize_commitments(
-        hb_maps:get(<<"body">>, Msg, not_found, Opts),
-        Opts
-    ),
+    FoundInner =
+        hb_message:normalize_commitments(
+            hb_maps:get(<<"body">>, Msg, not_found, Opts),
+            Opts
+        ),
     LoadedFoundInner = hb_cache:ensure_all_loaded(FoundInner, Opts),
     % Verify that the fully loaded version of the inner message, and the one
     % gained by applying `hb_maps:get` match and verify.

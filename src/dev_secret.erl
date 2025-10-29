@@ -340,10 +340,16 @@ persist_registered_wallet(WalletDetails, RespBase, Opts) ->
     ?event({resp_base, RespBase, WalletDetails}),
     AccessControl = hb_maps:get(<<"access-control">>, WalletDetails, #{}, Opts),
     {ok, _, Commitment} = 
-        % TODO: Improve this to not hardcode the fallback commitment device.
         hb_message:commitment(
-            #{ <<"commitment-device">> => hb_maps:get(<<"device">>, RespBase, <<"cookie@1.0">>, Opts) },
-            AccessControl,
+            #{},
+            hb_message:without_commitments(
+                #{
+                    <<"keyid">> => <<"constant:ao">>,
+                    <<"commitment-device">> => <<"httpsig@1.0">> 
+                },
+                AccessControl,
+                Opts
+            ),
             Opts
         ),
     KeyID = hb_maps:get(<<"keyid">>, Commitment, Opts),

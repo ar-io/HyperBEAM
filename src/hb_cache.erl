@@ -382,21 +382,13 @@ write_binary(Hashpath, Bin, Store, Opts) ->
 %% richly typed map or a direct binary.
 read(Path, Opts) ->
     StoreReadResult = store_read(Path, hb_opts:get(store, no_vifaable_store, Opts), Opts),
-    % TODO: Make the way to tell if it is a commitment message more robust.
-    NormRes = 
-        case StoreReadResult of 
-            {ok, Res} ->
-                case is_map(Res) 
-                    andalso maps:is_key(<<"commitment-device">>, Res) 
-                    andalso maps:is_key(<<"committed">>, Res) 
-                of
-                    true -> {ok, Res};
-                    false -> {ok, hb_message:normalize_commitments(Res, Opts, passive)}
-                end;
-            _ -> StoreReadResult
-        end,
-    ?event(jack2, {read, {path, Path}, {res, StoreReadResult}, {norm_res, NormRes}}),
-    NormRes.
+    case StoreReadResult of 
+        {ok, Res} ->
+            {ok, hb_message:normalize_commitments(Res, Opts)};
+        _ -> StoreReadResult
+    end.
+do_read_commitment(Path, Opts) ->
+    store_read(Path, hb_opts:get(store, no_viable_store, Opts), Opts).
 
 %% @doc Load all of the commitments for a message into memory.
 read_all_commitments(Msg, Opts) ->
@@ -420,7 +412,7 @@ read_all_commitments(Msg, Opts) ->
                                 Store,
                                 [CommitmentsPath, CommitmentID]
                             ),
-                        case ShouldLoad andalso read(ResolvedCommPath, Opts) of
+                        case ShouldLoad andalso do_read_commitment(ResolvedCommPath, Opts) of
                             {ok, Commitment} ->
                                 {
                                     true,
@@ -530,7 +522,7 @@ prepare_links(Target, RootPath, Subpaths, Store, Opts) ->
                             {commitments_path, CommPath}
                         }
                     ),
-                    case read(CommPath, Opts) of
+                    case do_read_commitment(CommPath, Opts) of
                         {ok, Commitment} ->
                             LoadedCommitment = ensure_all_loaded(Commitment, Opts),
                             ?event(read_commitment,
