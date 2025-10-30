@@ -73,7 +73,14 @@ ensure_loaded(Ref,
             {store, Store}
         }
     ),
-    case hb_cache:read(ID, hb_util:deep_merge(Opts, LkOpts, Opts)) of
+    CacheReadResult = 
+        case hb_opts:get(commitment, undefined, Opts) of
+            true ->
+                do_read_commitment(ID, hb_util:deep_merge(Opts, LkOpts, Opts));
+            _ ->
+                hb_cache:read(ID, hb_util:deep_merge(Opts, LkOpts, Opts))
+        end,
+    case CacheReadResult of
         {ok, Next} ->
             ?event(debug_cache,
                 {loaded,
@@ -107,7 +114,14 @@ ensure_loaded(Ref, Link = {link, ID, LinkOpts = #{ <<"lazy">> := true }}, RawOpt
     % the options that are already set in the link.
     UnscopedOpts = hb_util:deep_merge(RawOpts, LinkOpts, RawOpts),
     Opts = hb_store:scope(UnscopedOpts, hb_opts:get(scope, local, LinkOpts)),
-    case hb_cache:read(ID, Opts) of
+    CacheReadResult = 
+        case hb_opts:get(commitment, undefined, Opts) of
+            true ->
+                do_read_commitment(ID, Opts);
+            _ ->
+                read(ID, Opts)
+        end,
+    case CacheReadResult of
         {ok, LoadedMsg} ->
             ?event(caching,
                 {lazy_loaded,
@@ -381,7 +395,8 @@ write_binary(Hashpath, Bin, Store, Opts) ->
 %% @doc Read the message at a path. Returns in `structured@1.0' format: Either a
 %% richly typed map or a direct binary.
 read(Path, Opts) ->
-    StoreReadResult = store_read(Path, hb_opts:get(store, no_vifaable_store, Opts), Opts),
+    StoreReadResult =
+        store_read(Path, hb_opts:get(store, no_viable_store, Opts), Opts),
     case StoreReadResult of 
         {ok, Res} ->
             {ok, hb_message:normalize_commitments(Res, Opts)};
@@ -418,7 +433,10 @@ read_all_commitments(Msg, Opts) ->
                                     true,
                                     {
                                         CommitmentID,
-                                        ensure_all_loaded(Commitment, Opts)
+                                        ensure_all_loaded(
+                                            Commitment,
+                                            Opts#{ commitment => true }
+                                        )
                                     }
                                 };
                             _ ->
@@ -524,7 +542,11 @@ prepare_links(Target, RootPath, Subpaths, Store, Opts) ->
                     ),
                     case do_read_commitment(CommPath, Opts) of
                         {ok, Commitment} ->
-                            LoadedCommitment = ensure_all_loaded(Commitment, Opts),
+                            LoadedCommitment = 
+                                ensure_all_loaded(
+                                    Commitment,
+                                    Opts#{ commitment => true }
+                                ),
                             ?event(read_commitment,
                                 {found_target_commitment,
                                     {path, CommPath},
