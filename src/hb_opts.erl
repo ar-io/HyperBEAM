@@ -542,7 +542,12 @@ load_bin(Device, Bin, Opts) ->
             ok,
             mimic_default_types(
                 hb_cache:ensure_all_loaded(
-                    hb_message:convert(Bin, <<"structured@1.0">>, Device, Opts),
+                    hb_message:convert(
+                        Bin,
+                        <<"structured@1.0">>,
+                        Device,
+                        Opts#{ linkify_mode => false }
+                    ),
                     Opts
                 ),
                 new_atoms,
