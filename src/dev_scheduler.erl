@@ -570,7 +570,10 @@ schedule(Base, Req, Opts) ->
 post_schedule(Base, Req, Opts) ->
     ?event(scheduling_message),
     % Find the target message to schedule:
-    ToSched = find_message_to_schedule(Base, Req, Opts),
+    RawToSched = find_message_to_schedule(Base, Req, Opts),
+    % If the message can not be properly loaded, this will throw an error
+    % before scheduling the message.    
+    ToSched = hb_cache:ensure_all_loaded(RawToSched, Opts),
     ?event({to_sched, ToSched}),
     % Find the ProcessID of the target message:
     % - If it is a Process, use the ID of the message.
