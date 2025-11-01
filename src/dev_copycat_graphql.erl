@@ -430,11 +430,16 @@ combined_filters_test() ->
 %% @doc Real world test with actual indexing
 fetch_scheduler_location_test() ->
     {Node, _Opts} = run_test_node(),
-    {ok, Res} =
+    Res =
         hb_http:get(
             Node,
             #{
-                <<"path">> => <<"~copycat@1.0/graphql?tags+map=Type=Scheduler-Location">>
+                <<"path">> =>
+                    <<
+                        "~copycat@1.0/graphql?",
+                        "owners=6F7pOU5Gh5GAqFIRYEInp7gbHmbupdZDZimj46Rje3U&",
+                        "tags+map=Type=Scheduler-Location"
+                    >>
             },
             #{}
         ),
