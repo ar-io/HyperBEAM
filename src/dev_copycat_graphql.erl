@@ -127,6 +127,8 @@ index_graphql(Total, Query, Vars, Node, OpName, Opts) ->
                 {ok, NewTotal}
         end
     else
+        {error, _} when Total > 0 ->
+            {ok, Total};
         {error, Reason} ->
             {error, Reason}
     end.
