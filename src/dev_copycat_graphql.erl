@@ -245,7 +245,7 @@ build_tags_part(TagsMap) when is_map(TagsMap) ->
             "\", values: ", 
             (build_graphql_array(Value))/binary, 
         "}">>
-        || {Key, Value} <- maps:to_list(TagsMap)
+        || {Key, Value} <- hb_maps:to_list(hb_message:uncommitted(TagsMap))
     ],
     [<<"tags: [", (iolist_to_binary(lists:join(<<", ">>, TagStrings)))/binary, "]">>].
 
