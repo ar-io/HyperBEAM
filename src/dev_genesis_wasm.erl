@@ -125,7 +125,7 @@ ensure_started(Opts) ->
                     ),
                 case filelib:is_dir(DevPath) of
                     true -> DevPath;
-                    false -> filename:join([Cwd, "_build/genesis-wasm-server"]) % Fallback
+                    false -> filename:join([Cwd, "./opt/_build/genesis-wasm-server"]) % Fallback
                 end
         end,
     ?event({ensure_started, genesis_wasm_server_dir, GenesisWasmServerDir}),
@@ -229,7 +229,7 @@ ensure_started(Opts) ->
                                                 hb_util:list(
                                                     hb_opts:get(
                                                         genesis_wasm_memory_cache_max_size,
-                                                        17179869184, %% 16GB
+                                                        "17179869184", %% 16GB
                                                         Opts
                                                     )
                                                 )
@@ -508,7 +508,6 @@ import_legacy_checkpoint() ->
         priv_wallet => hb:wallet(),
         genesis_wasm_import_authorities =>
             [
-                <<"fcoN_xJeisVsPXA-trzVAuIiqO3ydLQxM-L4XbrQKzY">>,
                 <<"WjnS-s03HWsDSdMnyTdzB1eHZB2QheUWP_FVRVYxkXk">>
             ]
     },
