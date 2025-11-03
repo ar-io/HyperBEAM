@@ -32,5 +32,5 @@ jobs:
           push: true
           platforms: linux/amd64
           tags: |
-            ghcr.io/${{ github.repository_owner }}/HyperBEAM:latest
-            ghcr.io/${{ github.repository_owner }}/HyperBEAM:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/hyperbeam:latest
+            ghcr.io/${{ github.repository_owner }}/hyperbeam:${{ github.sha }}
