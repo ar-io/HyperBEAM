@@ -1,3 +1,4 @@
+
 %% Maximum size of a single data chunk, in bytes.
 -define(DATA_CHUNK_SIZE, (256 * 1024)).
 
@@ -10,26 +11,15 @@
 -define(DEFAULT_ID, << 0:256 >>).
 -define(DEFAULT_OWNER, << 0:4096 >>).
 -define(DEFAULT_DATA, <<>>).
+-define(DEFAULT_ANCHOR, <<>>).
+-define(DEFAULT_TARGET, <<>>).
+-define(DEFAULT_DATA_ROOT, <<>>).
+-define(DEFAULT_QUANTITY, 0).
+-define(DEFAULT_REWARD, 0).
 
--define(MAX_TAG_NAME_SIZE, 3072).
+-define(MAX_TAG_COUNT, 128).
+-define(MAX_TAG_NAME_SIZE, 1024).
 -define(MAX_TAG_VALUE_SIZE, 3072).
-
-%% The hashing algorithm used to calculate wallet addresses.
--define(HASH_ALG, sha256).
-
--define(RSA_SIGN_ALG, rsa).
--define(RSA_PRIV_KEY_SZ, 4096).
-
--define(ECDSA_SIGN_ALG, ecdsa).
--define(ECDSA_TYPE_BYTE, <<2>>).
-
--define(EDDSA_SIGN_ALG, eddsa).
--define(EDDSA_TYPE_BYTE, <<3>>).
-
-%% The default key type used by transactions that do not specify a signature type.
--define(RSA_KEY_TYPE, {?RSA_SIGN_ALG, 65537}).
--define(ECDSA_KEY_TYPE, {?ECDSA_SIGN_ALG, secp256k1}).
--define(DEFAULT_KEY_TYPE, ?RSA_KEY_TYPE).
 
 %% Winstons per AR.
 -define(WINSTON_PER_AR, 1000000000000).
@@ -47,33 +37,32 @@
     %% Either the identifier of the previous transaction from
     %% the same wallet or the identifier of one of the
     %% last ?MAX_TX_ANCHOR_DEPTH blocks.
-    last_tx = <<>>,
+    anchor = ?DEFAULT_ANCHOR,
     %% The public key the transaction is signed with.
     owner =	?DEFAULT_OWNER,
-	%% The owner address. Used as a cache to avoid recomputing it, not serialized.
-	owner_address = not_set,
+    %% The owner address. Used as a cache to avoid recomputing it, not serialized.
+    owner_address = not_set,
     %% A list of arbitrary key-value pairs. Keys and values are binaries.
     tags = [],
     %% The address of the recipient, if any. The SHA2-256 hash of the public key.
-    target = <<>>,
+    target = ?DEFAULT_TARGET,
     %% The amount of Winstons to send to the recipient, if any.
-    quantity = 0,
+    quantity = ?DEFAULT_QUANTITY,
     %% The data to upload, if any. For v2 transactions, the field is optional - a fee
     %% is charged based on the "data_size" field, data itself may be uploaded any time
     %% later in chunks.
     data = ?DEFAULT_DATA,
-    %% Not serialized.
     manifest = undefined,
     %% Size in bytes of the transaction data.
     data_size = 0,
     %% Deprecated. Not used, not gossiped.
     data_tree = [],
     %% The Merkle root of the Merkle tree of data chunks.
-    data_root = <<>>,
+    data_root = ?DEFAULT_DATA_ROOT,
     %% The signature.
     signature = ?DEFAULT_SIG,
     %% The fee in Winstons.
-    reward = 0,
+    reward = ?DEFAULT_REWARD,
 
     %% The code for the denomination of AR in base units.
     %%
@@ -96,6 +85,30 @@
 
     %% The type of signature this transaction was signed with. A system field,
     %% not used by the protocol yet.
-    signature_type = ?RSA_KEY_TYPE
+    signature_type = {rsa, 65537}
 }).
 
+%% The hashing algorithm used to calculate wallet addresses.
+-define(HASH_ALG, sha256).
+
+-define(RSA_SIGN_ALG, rsa).
+-define(RSA_PRIV_KEY_SZ, 4096).
+-define(RSA_KEY_TYPE, {?RSA_SIGN_ALG, 65537}).
+
+-define(ECDSA_SIGN_ALG, ecdsa).
+-define(ECDSA_TYPE_BYTE, <<2>>).
+
+-define(EDDSA_SIGN_ALG, eddsa).
+-define(EDDSA_TYPE_BYTE, <<3>>).
+-define(ECDSA_KEY_TYPE, {?ECDSA_SIGN_ALG, secp256k1}).
+
+%% The default key type used by transactions that do not specify a signature type.
+-define(DEFAULT_KEY_TYPE, ?RSA_KEY_TYPE).
+
+-define(BUNDLE_TAGS, [
+    {<<"bundle-format">>, <<"binary">>},
+    {<<"bundle-version">>, <<"2.0.0">>}
+]).
+
+-define(BUNDLE_KEYS, [
+    <<"bundle-format">>, <<"bundle-version">>, <<"bundle-map">>]).

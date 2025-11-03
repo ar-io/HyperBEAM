@@ -1,12 +1,10 @@
-%%% @doc Utilities for Arweave L1 transaction creation, signing, and verification.
+%%% @doc The module with utilities for transaction creation, signing, and verification.
 -module(ar_tx).
 
--export([sign/2, verify/1, verify_tx_id/2, generate_id/2, get_owner_address/1, data_root/1]).
--export([enforce_valid_tx/1, enforce_valid_unsigned_tx/1, enforce_valid_signed_tx/1]).
+-export([sign/2, verify/1, verify_tx_id/2]).
+-export([id/1, id/2, get_owner_address/1, data_root/1]).
+-export([generate_signature_data_segment/1]).
 -export([json_struct_to_tx/1, tx_to_json_struct/1]).
-
-%% Used for testing
--export([new/0]).
 
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -15,25 +13,29 @@
 %%% Public interface.
 %%%===================================================================
 
-%% @doc Cryptographically sign (claim ownership of) a transaction.
+%% @doc Cryptographically sign (claim ownership of) a v2 transaction.
+%% Used in tests and by the handler of the POST /unsigned_tx endpoint, which is
+%% disabled by default.
 sign(TX, {PrivKey, PubKey = {KeyType, Owner}}) ->
-    TX2 = TX#tx{ owner = Owner, signature_type = KeyType,
-            owner_address = ar_wallet:to_address(Owner, KeyType) },
-    SignatureDataSegment = generate_signature_data_segment(TX2),
-    sign(TX2, PrivKey, PubKey, SignatureDataSegment).
+    TX2 = TX#tx{ owner = Owner, signature_type = KeyType },
+    TX3 = TX2#tx{ owner_address = get_owner_address(TX2) },
+    SignatureDataSegment = generate_signature_data_segment(TX3),
+    sign(TX3, PrivKey, PubKey, SignatureDataSegment).
 
 sign(TX, PrivKey, PubKey = {KeyType, Owner}) ->
-    TX2 = TX#tx{ owner = Owner, signature_type = KeyType,
-            owner_address = ar_wallet:to_address(Owner, KeyType) },
-    SignatureDataSegment = generate_signature_data_segment(TX2),
-    sign(TX2, PrivKey, PubKey, SignatureDataSegment).
+    TX2 = TX#tx{ owner = Owner, signature_type = KeyType },
+    TX3 = TX2#tx{ owner_address = get_owner_address(TX2) },
+    SignatureDataSegment = generate_signature_data_segment(TX3),
+    sign(TX3, PrivKey, PubKey, SignatureDataSegment).
 
 %% @doc Cryptographically sign (claim ownership of) a v1 transaction.
 %% Used in tests and by the handler of the POST /unsigned_tx endpoint, which is
 %% disabled by default.
-sign_v1(TX, PrivKey, PubKey = {_, Owner}) ->
+sign_v1(TX, {PrivKey, PubKey = {_, Owner}}) ->
     sign(TX, PrivKey, PubKey, signature_data_segment_v1(TX#tx{ owner = Owner })).
 
+sign_v1(TX, PrivKey, PubKey = {_, Owner}) ->
+    sign(TX, PrivKey, PubKey, signature_data_segment_v1(TX#tx{ owner = Owner })).
 
 %% @doc Verify whether a transaction is valid.
 %% 
@@ -63,19 +65,26 @@ verify(TX) ->
 verify_tx_id(ExpectedID, #tx{ id = ID } = TX) ->
     ExpectedID == ID andalso verify_signature(TX) andalso verify_hash(TX).
 
-%% @doc Generate the ID for a given transaction.
-generate_id(TX, signed) ->
-    crypto:hash(sha256, TX#tx.signature);
-generate_id(TX, unsigned) ->
-    crypto:hash(sha256, generate_signature_data_segment(TX)).
+%% @doc Return or generate the ID for a given transaction.
+id(TX) -> id(TX, unsigned).
+id(#tx{ id = ?DEFAULT_ID, signature = ?DEFAULT_SIG }, signed) ->
+    not_signed;
+id(TX = #tx{ id = ?DEFAULT_ID }, signed) ->
+    dev_arweave_common:generate_id(TX, signed);
+id(#tx{ id = ID }, signed) ->
+    ID;
+id(TX = #tx{ unsigned_id = ?DEFAULT_ID }, unsigned) ->
+    dev_arweave_common:generate_id(TX, unsigned);
+id(#tx{ unsigned_id = UnsignedID }, unsigned) ->
+    UnsignedID.
 
 %% @doc Return the transaction's owner address. Take the cached value if available.
 get_owner_address(#tx{ owner = ?DEFAULT_OWNER }) ->
-	not_set;
+    not_set;
 get_owner_address(#tx{ owner = Owner, signature_type = KeyType, owner_address = not_set }) ->
-	ar_wallet:to_address(Owner, KeyType);
+    ar_wallet:to_address(Owner, KeyType);
 get_owner_address(#tx{ owner_address = OwnerAddress }) ->
-	OwnerAddress.
+    OwnerAddress.
 
 data_root(Bin) ->
     Chunks = chunk_binary(?DATA_CHUNK_SIZE, Bin),
@@ -105,26 +114,23 @@ generate_signature_data_segment(#tx{ format = 1 } = TX) ->
 generate_signature_data_segment(_) ->
     error.
 
-%% @doc Generate the data segment to be signed for a given v2 TX.
+%%% @doc Generate the data segment to be signed for a given v2 TX.
 signature_data_segment_v2(TX) ->
-    NormTX = hb_tx:normalize_data(TX),
-    ?event({signature_data_segment_v2, {explicit, NormTX}}),
-    true = enforce_valid_tx(NormTX),
     List = [
-        << (integer_to_binary(NormTX#tx.format))/binary >>,
-        << (NormTX#tx.owner)/binary >>,
-        << (NormTX#tx.target)/binary >>,
-        << (list_to_binary(integer_to_list(NormTX#tx.quantity)))/binary >>,
-        << (list_to_binary(integer_to_list(NormTX#tx.reward)))/binary >>,
-        << (NormTX#tx.last_tx)/binary >>,
-        tags_to_list(NormTX#tx.tags),
-        << (integer_to_binary(NormTX#tx.data_size))/binary >>,
-        << (NormTX#tx.data_root)/binary >>
+        << (integer_to_binary(TX#tx.format))/binary >>,
+        << (TX#tx.owner)/binary >>,
+        << (TX#tx.target)/binary >>,
+        << (list_to_binary(integer_to_list(TX#tx.quantity)))/binary >>,
+        << (list_to_binary(integer_to_list(TX#tx.reward)))/binary >>,
+        << (TX#tx.anchor)/binary >>,
+        tags_to_list(TX#tx.tags),
+        << (integer_to_binary(TX#tx.data_size))/binary >>,
+        << (TX#tx.data_root)/binary >>
     ],
     List2 =
-        case NormTX#tx.denomination > 0 of
+        case TX#tx.denomination > 0 of
             true ->
-                [<< (integer_to_binary(NormTX#tx.denomination))/binary >> | List];
+                [<< (integer_to_binary(TX#tx.denomination))/binary >> | List];
             false ->
                 List
         end,
@@ -132,17 +138,28 @@ signature_data_segment_v2(TX) ->
 
 %% @doc Generate the data segment to be signed for a given v1 TX.
 signature_data_segment_v1(TX) ->
-    NormTX = hb_tx:normalize_data(TX),
-    true = enforce_valid_tx(NormTX),
-    <<
-        (NormTX#tx.owner)/binary,
-        (NormTX#tx.target)/binary,
-        (NormTX#tx.data)/binary,
-        (list_to_binary(integer_to_list(NormTX#tx.quantity)))/binary,
-        (list_to_binary(integer_to_list(NormTX#tx.reward)))/binary,
-        (NormTX#tx.last_tx)/binary,
-        (tags_to_binary(NormTX#tx.tags))/binary
-    >>.
+    case TX#tx.denomination > 0 of
+        true ->
+            ar_deep_hash:hash([
+                << (integer_to_binary(TX#tx.denomination))/binary >>,
+                << (TX#tx.owner)/binary >>,
+                << (TX#tx.target)/binary >>,
+                << (list_to_binary(integer_to_list(TX#tx.quantity)))/binary >>,
+                << (list_to_binary(integer_to_list(TX#tx.reward)))/binary >>,
+                << (TX#tx.anchor)/binary >>,
+                tags_to_list(TX#tx.tags)
+            ]);
+        false ->
+            <<
+                (TX#tx.owner)/binary,
+                (TX#tx.target)/binary,
+                (TX#tx.data)/binary,
+                (list_to_binary(integer_to_list(TX#tx.quantity)))/binary,
+                (list_to_binary(integer_to_list(TX#tx.reward)))/binary,
+                (TX#tx.anchor)/binary,
+                (tags_to_binary(TX#tx.tags))/binary
+            >>
+    end.
 
 tags_to_list(Tags) ->
     [[Name, Value] || {Name, Value} <- Tags].
@@ -167,24 +184,38 @@ verify_v1(_) ->
 verify_v2(#tx{ format = 2 } = TX) ->
     [
         {"tx_data_size_negative", TX#tx.data_size >= 0},
-        {"tx_data_size_data_root_mismatch", (TX#tx.data_size == 0) == (TX#tx.data_root == <<>>)}
+        {"tx_data_size_data_root_mismatch", (TX#tx.data_size == 0) == (TX#tx.data_root == <<>>)},
+        {"tx_data_mismatch", verify_v2_data(TX)}
     ];
 verify_v2(_) ->
     [].
 
 sign(TX, PrivKey, {KeyType, Owner}, SignatureDataSegment) ->
-    true = enforce_valid_unsigned_tx(TX),
     NewTX = TX#tx{ 
         owner = Owner, 
         signature_type = KeyType,
-        owner_address = ar_wallet:to_address(Owner, KeyType),
         signature = ar_wallet:sign(PrivKey, SignatureDataSegment)
     },
-    NewTX#tx{ id = generate_id(NewTX, signed) }.
+    NewTX#tx{
+        id = dev_arweave_common:generate_id(NewTX, signed), 
+        owner_address = get_owner_address(NewTX) }.
 
 %% @doc Verify that the transaction's ID is a hash of its signature.
 verify_hash(#tx{ id = ID } = TX) ->
-    ID == generate_id(TX, signed).
+    ID == dev_arweave_common:generate_id(TX, signed).
+
+%% @doc On Arweave we don't have data on format=2 transactions, and so
+%% traditionally just verify the transcation based on data_rot and data_size.
+%% However in HyperBEAM we will often populate the data field. Adding this
+%% check to verify that `data_root`, `data_size`, and `data` are consistent.
+verify_v2_data(#tx{ format = 2, data = ?DEFAULT_DATA }) ->
+    true;
+verify_v2_data(#tx{ 
+        format = 2, data_root = DataRoot, 
+        data_size = DataSize, data = Data }) ->
+    (DataSize == byte_size(Data)) andalso (DataRoot == data_root(Data));
+verify_v2_data(_) ->
+    true.
 
 collect_validation_results(_TXID, Checks) ->
     KeepFailed = fun
@@ -230,16 +261,16 @@ json_struct_to_tx(TXStruct) ->
     Owner = hb_util:decode(hb_util:find_value(<<"owner">>, TXStruct)),
     Sig = hb_util:decode(hb_util:find_value(<<"signature">>, TXStruct)),
     SigType = set_sig_type_from_pub_key(Owner),
+    %% Only RSA supported for now
     ?RSA_KEY_TYPE = SigType,
     TX = #tx{
         format = Format,
         id = TXID,
-        last_tx = hb_util:decode(hb_util:find_value(<<"last_tx">>, TXStruct)),
-        owner = Owner,
-        owner_address = ar_wallet:to_address(Owner, SigType),
+        anchor = hb_util:decode(hb_util:find_value(<<"last_tx">>, TXStruct)),
+        owner = hb_util:decode(hb_util:find_value(<<"owner">>, TXStruct)),
         tags = [{hb_util:decode(Name), hb_util:decode(Value)}
                 %% Only the elements matching this pattern are included in the list.
-                || {[{<<"name">>, Name}, {<<"value">>, Value}]} <- Tags],
+                || #{<<"name">> := Name, <<"value">> := Value} <- Tags],
         target = hb_util:decode(hb_util:find_value(<<"target">>, TXStruct)),
         quantity = binary_to_integer(hb_util:find_value(<<"quantity">>, TXStruct)),
         data = Data,
@@ -254,8 +285,7 @@ json_struct_to_tx(TXStruct) ->
             end,
         denomination = Denomination
     },
-    true = enforce_valid_signed_tx(TX),
-    TX.
+    TX#tx{ owner_address = get_owner_address(TX) }.
 
 set_sig_type_from_pub_key(Owner) ->
     case Owner of
@@ -264,11 +294,12 @@ set_sig_type_from_pub_key(Owner) ->
         _ ->
             ?RSA_KEY_TYPE
     end.
+
 tx_to_json_struct(
     #tx{
         id = ID,
         format = Format,
-        last_tx = Last,
+        anchor = Anchor,
         owner = Owner,
         tags = Tags,
         target = Target,
@@ -276,11 +307,13 @@ tx_to_json_struct(
         data = Data,
         reward = Reward,
         signature = Sig,
+        signature_type = SigType,
         data_size = DataSize,
         data_root = DataRoot,
         denomination = Denomination
-    } = TX) ->
-    true = enforce_valid_signed_tx(TX),
+    }) ->
+    %% Only RSA supported for now
+    ?RSA_KEY_TYPE = SigType,
     Fields = [
         {<<"format">>,
             case Format of
@@ -290,16 +323,14 @@ tx_to_json_struct(
                     Format
             end},
         {<<"id">>, hb_util:encode(ID)},
-        {<<"last_tx">>, hb_util:encode(Last)},
+        {<<"last_tx">>, hb_util:encode(Anchor)},
         {<<"owner">>, hb_util:encode(Owner)},
         {<<"tags">>,
             lists:map(
                 fun({Name, Value}) ->
-                    {
-                        [
-                            {<<"name">>, hb_util:encode(Name)},
-                            {<<"value">>, hb_util:encode(Value)}
-                        ]
+                    #{
+                        <<"name">> => hb_util:encode(Name),
+                        <<"value">> => hb_util:encode(Value)
                     }
                 end,
                 Tags
@@ -373,188 +404,23 @@ chunks_to_size_tagged_chunks(Chunks) ->
 sized_chunks_to_sized_chunk_ids(SizedChunks) ->
     [{generate_chunk_id(Chunk), Size} || {Chunk, Size} <- SizedChunks].
 
-%% @doc Verifies that the given transaction is a minimally valid signed or
-%% unsigned transaction.
-%% 
-%% In particular:
-%% 1. Values are of the correct type and size.
-%% 2. In some cases where a limited number of values are allowed for a field, those are
-%%    checked as well (e.g. format is 1 or 2)
-%% 3. Unsupported fields are set to their default values.
-%% 
-%% When support is added for new fields (e.g. when we add support for ECDSA signatures),
-%% this function will have to be updated.
-enforce_valid_tx(TX) ->
-    hb_util:ok_or_throw(TX,
-        hb_util:check_type(TX, tx),
-        {invalid_tx, TX}
-    ),
-    hb_util:ok_or_throw(TX,
-        hb_util:check_value(TX#tx.format, [1, 2]),
-        {invalid_field, format, TX#tx.format}
-    ),
-    % id will be set when the transaction is signed and can be empty before then
-    hb_util:ok_or_throw(TX,
-        hb_util:check_size(TX#tx.id, [0, 32]),
-        {invalid_field, id, TX#tx.id}
-    ),
-    % Arweave L1 #tx doesn't support unsigned_id
-    hb_util:ok_or_throw(TX,
-        hb_util:check_size(TX#tx.unsigned_id, [0, 32]),
-        {invalid_field, unsigned_id, TX#tx.unsigned_id}
-    ),
-    % last_tx can't be empty
-    hb_util:ok_or_throw(TX,
-        hb_util:check_size(TX#tx.last_tx, [0, 32]),
-        {invalid_field, last_tx, TX#tx.last_tx}
-    ),
-    % owner can't be empty
-    hb_util:ok_or_throw(TX,
-        hb_util:check_size(TX#tx.owner, [byte_size(?DEFAULT_OWNER)]),
-        {invalid_field, owner, TX#tx.owner}
-    ),
-    hb_util:ok_or_throw(TX,
-        hb_util:check_size(TX#tx.target, [0, 32]),
-        {invalid_field, target, TX#tx.target}
-    ),
-    hb_util:ok_or_throw(TX,
-        hb_util:check_type(TX#tx.quantity, integer),
-        {invalid_field, quantity, TX#tx.quantity}
-    ),
-    hb_util:ok_or_throw(
-        TX,
-        hb_util:check_type(TX#tx.data, binary),
-        {invalid_field, data, TX#tx.data}
-    ),
-    hb_util:ok_or_throw(TX,
-        hb_util:check_type(TX#tx.data_size, integer),
-        {invalid_field, data_size, TX#tx.data_size}
-    ),
-    hb_util:ok_or_throw(TX,
-        hb_util:check_size(TX#tx.data_root, [0, 32]),
-        {invalid_field, data_root, TX#tx.data_root}
-    ),
-    hb_util:ok_or_throw(TX,
-        hb_util:check_size(TX#tx.signature, [65, byte_size(?DEFAULT_SIG)]),
-        {invalid_field, signature, TX#tx.signature}
-    ),
-    hb_util:ok_or_throw(TX,
-        hb_util:check_type(TX#tx.reward, integer),
-        {invalid_field, reward, TX#tx.reward}
-    ),
-    % Arweave L1 #tx doesn't support denomination changes yet.
-    % Refresh from arweave source to add support.
-    hb_util:ok_or_throw(TX,
-        hb_util:check_value(TX#tx.denomination, [0]),
-        {invalid_field, denomination, TX#tx.denomination}
-    ),
-    % Arweave L1 #tx only supports RSA signatures for now
-    hb_util:ok_or_throw(TX,
-        hb_util:check_value(TX#tx.signature_type, [?RSA_KEY_TYPE]),
-        {invalid_field, signature_type, TX#tx.signature_type}
-    ),
-    hb_util:ok_or_throw(TX,
-        hb_util:check_type(TX#tx.tags, list),
-        {invalid_field, tags, TX#tx.tags}
-    ),
-    lists:foreach(
-        fun({Name, Value}) ->
-            hb_util:ok_or_throw(TX,
-                hb_util:check_type(Name, binary),
-                {invalid_field, tag_name, Name}
-            ),
-            hb_util:ok_or_throw(TX,
-                hb_util:check_size(Name, {range, 0, ?MAX_TAG_NAME_SIZE}),
-                {invalid_field, tag_name, Name}
-            ),
-            hb_util:ok_or_throw(TX,
-                hb_util:check_type(Value, binary),
-                {invalid_field, tag_value, Value}
-            ),
-            hb_util:ok_or_throw(TX,
-                hb_util:check_size(Value, {range, 0, ?MAX_TAG_VALUE_SIZE}),
-                {invalid_field, tag_value, Value}
-            );
-            (InvalidTagForm) ->
-                throw({invalid_field, tag, InvalidTagForm})
-        end,
-        TX#tx.tags
-    ),
-    true.
-
-%% @doc Like enforce_valid_tx/1, but restricts also verifies that the transaction has not
-%% been signed.
-enforce_valid_unsigned_tx(TX) ->
-    true = enforce_valid_tx(TX),
-    hb_util:ok_or_throw(TX,
-        hb_util:check_value(TX#tx.id, [?DEFAULT_ID]),
-        {invalid_field, id, TX#tx.id}
-    ),
-    hb_util:ok_or_throw(TX,
-        hb_util:check_value(TX#tx.signature, [?DEFAULT_SIG]),
-        {invalid_field, signature, TX#tx.signature}
-    ),
-    true.
-
-%% @doc Like enforce_valid_tx/1, but also verifies that the transaction has been signed.
-%% 
-%% Note: the validity of the signature is *not* checked.
-enforce_valid_signed_tx(TX) ->
-    true = enforce_valid_tx(TX),
-    hb_util:ok_or_throw(TX,
-        hb_util:check_size(TX#tx.id, [32]),
-        {invalid_field, id, TX#tx.id}
-    ),
-    hb_util:ok_or_throw(TX,
-        hb_util:check_size(TX#tx.last_tx, [32]),
-        {invalid_field, last_tx, TX#tx.last_tx}
-    ),
-    hb_util:ok_or_throw(TX,
-        not hb_util:check_value(TX#tx.id, [?DEFAULT_ID]),
-        {invalid_field, id, TX#tx.id}
-    ),
-    hb_util:ok_or_throw(TX,
-        hb_util:check_size(TX#tx.signature, [65, byte_size(?DEFAULT_SIG)]),
-        {invalid_field, signature, TX#tx.signature}
-    ),
-    hb_util:ok_or_throw(TX,
-        not hb_util:check_value(TX#tx.signature, [?DEFAULT_SIG]),
-        {invalid_field, signature, TX#tx.signature}
-    ),
-    hb_util:ok_or_throw(TX,
-        not hb_util:check_value(TX#tx.owner, [?DEFAULT_OWNER]),
-        {invalid_field, owner, TX#tx.owner}
-    ),
-    true.
-
 %%%===================================================================
 %%% Tests.
 %%%===================================================================
 
 %% @doc A helper for preparing transactions for signing. Used in tests.
 %% Should be moved to a testing module.
-new() ->
-    new(<<>>).
-new(Data) ->
-    TX = #tx{
-        format = 2,
-        last_tx = crypto:strong_rand_bytes(32),
+new(Data, Reward) ->
+    #tx{
+        format = 1,
+        id = crypto:strong_rand_bytes(32),
         data = Data,
+        reward = Reward,
         data_size = byte_size(Data)
-    },
-    true = enforce_valid_unsigned_tx(TX),
-    TX.
+    }.
 
-%%===================================================================
-%% signing tests
-%%===================================================================
-
-signing_test_() ->
-    [
-        {timeout, 10, fun test_sign_tx/0},
-        {timeout, 10, fun test_sign_and_verify_chunked/0},
-        {timeout, 10, fun test_forge/0}
-    ].
+sign_tx_test_() ->
+    {timeout, 30, fun test_sign_tx/0}.
 
 sign_tx_v1(TX, {Priv, Pub}) ->
     sign_v1(generate_chunk_tree(TX), Priv, Pub).
@@ -563,12 +429,12 @@ sign_tx_v2(TX, {Priv, Pub}) ->
     sign(generate_chunk_tree(TX), Priv, Pub).
 
 test_sign_tx() ->
-    NewTX = (new(<<"TEST DATA">>))#tx{ reward = ?AR(1) },
+    NewTX = new(<<"TEST DATA">>, ?AR(1)),
     {Priv, Pub} = Wallet = ar_wallet:new(),
 
     ValidTXs = [
-        sign_v1(NewTX#tx{ format = 1} , Priv, Pub),
-        sign(generate_chunk_tree(NewTX), Priv, Pub)
+        sign_v1(NewTX, Priv, Pub),
+        sign(generate_chunk_tree(NewTX#tx{ format = 2 }), Priv, Pub)
     ],
     lists:foreach(
         fun(TX) ->
@@ -577,29 +443,29 @@ test_sign_tx() ->
         ValidTXs
     ),
     InvalidTXs = [
-        { tx_format_not_supported,
+        { "tx_format_not_supported",
             (sign_tx_v1(NewTX, Wallet))#tx{ format = 3 } },
-        { tx_format_not_supported,
+        { "tx_format_not_supported",
             (sign_tx_v2(NewTX#tx{ format = 2 }, Wallet))#tx{ format = 3 } },
-        { quantity_negative,
+        { "quantity_negative",
             sign_tx_v1(NewTX#tx{ quantity = -1 }, Wallet) },
-        { quantity_negative,
+        { "quantity_negative",
             sign_tx_v2(NewTX#tx{ quantity = -1, format = 2 }, Wallet) },
-        { same_owner_as_target,
+        { "same_owner_as_target",
             sign_tx_v1(NewTX#tx{ target = ar_wallet:to_address(Wallet) }, Wallet) },
-        { same_owner_as_target,
+        { "same_owner_as_target",
             sign_tx_v2(NewTX#tx{ target = ar_wallet:to_address(Wallet), format = 2 }, Wallet) },
-        { tx_id_not_valid,
+        { "tx_id_not_valid",
             (sign_tx_v1(NewTX, Wallet))#tx{ id = crypto:strong_rand_bytes(32) } },
-        { tx_id_not_valid,
+        { "tx_id_not_valid",
             (sign_tx_v2(NewTX#tx{ format = 2 }, Wallet))#tx{ id = crypto:strong_rand_bytes(32) } },
-        { tx_signature_not_valid,
-            (sign_tx_v1(NewTX, Wallet))#tx{ signature = crypto:strong_rand_bytes(512) } },
-        { tx_signature_not_valid,
-            (sign_tx_v2(NewTX#tx{ format = 2 }, Wallet))#tx{ signature = crypto:strong_rand_bytes(512) } },
-        { tx_data_size_negative,
+        { "tx_signature_not_valid",
+            (sign_tx_v1(NewTX, Wallet))#tx{ signature = crypto:strong_rand_bytes(64) } },
+        { "tx_signature_not_valid",
+            (sign_tx_v2(NewTX#tx{ format = 2 }, Wallet))#tx{ signature = crypto:strong_rand_bytes(64) } },
+        { "tx_data_size_negative",
             sign_tx_v2(NewTX#tx{ data_size = -1, format = 2 }, Wallet) },
-        { tx_data_size_data_root_mismatch, 
+        { "tx_data_size_data_root_mismatch", 
             sign((generate_chunk_tree(NewTX#tx{ format = 2 }))#tx{ data_root = <<>> }, Priv, Pub) }
     ],
     lists:foreach(
@@ -613,12 +479,15 @@ test_sign_tx() ->
         InvalidTXs
     ).
 
+sign_and_verify_chunked_test_() ->
+    {timeout, 60, fun test_sign_and_verify_chunked/0}.
+
 test_sign_and_verify_chunked() ->
     TXData = crypto:strong_rand_bytes(trunc(?DATA_CHUNK_SIZE * 5.5)),
     {Priv, Pub} = ar_wallet:new(),
     UnsignedTX =
         generate_chunk_tree(
-            (new())#tx{
+            #tx{
                 format = 2,
                 data = TXData,
                 data_size = byte_size(TXData),
@@ -629,29 +498,23 @@ test_sign_and_verify_chunked() ->
     ?assert(verify(SignedTX)).
 
 %% Ensure that a forged transaction does not pass verification.
+
+forge_test_() ->
+    {timeout, 30, fun test_forge/0}.
+
 test_forge() ->
-    NewTX = (new(<<"TEST DATA">>))#tx{ reward = ?AR(10) },
+    NewTX = new(<<"TEST DATA">>, ?AR(10)),
     {Priv, Pub} = ar_wallet:new(),
     InvalidSignTX = (sign_v1(NewTX, Priv, Pub))#tx{
         data = <<"FAKE DATA">>
     },
     ?assert(not verify(InvalidSignTX)).
 
-%%===================================================================
-%% chunk tree tests
-%%===================================================================
-
-generate_and_validate_chunk_tree_test_() ->
-    [
-        fun test_generate_and_validate_even_chunk_tree/0,
-        fun test_generate_and_validate_uneven_chunk_tree/0
-    ].
-
-test_generate_and_validate_even_chunk_tree() ->
+generate_and_validate_even_chunk_tree_test() ->
     Data = crypto:strong_rand_bytes(?DATA_CHUNK_SIZE * 7),
     lists:map(
         fun(ChallengeLocation) ->
-            generate_chunk_tree_and_validate_path(Data, ChallengeLocation)
+            test_generate_chunk_tree_and_validate_path(Data, ChallengeLocation)
         end,
         [
             0, 1, 10, ?DATA_CHUNK_SIZE, ?DATA_CHUNK_SIZE + 1, 2 * ?DATA_CHUNK_SIZE - 1,
@@ -659,11 +522,11 @@ test_generate_and_validate_even_chunk_tree() ->
         ]
     ).
 
-test_generate_and_validate_uneven_chunk_tree() ->
+generate_and_validate_uneven_chunk_tree_test() ->
     Data = crypto:strong_rand_bytes(?DATA_CHUNK_SIZE * 4 + 10),
     lists:map(
         fun(ChallengeLocation) ->
-            generate_chunk_tree_and_validate_path(Data, ChallengeLocation)
+            test_generate_chunk_tree_and_validate_path(Data, ChallengeLocation)
         end,
         [
             0, 1, 10, ?DATA_CHUNK_SIZE, ?DATA_CHUNK_SIZE + 1, 2 * ?DATA_CHUNK_SIZE - 1,
@@ -671,7 +534,7 @@ test_generate_and_validate_uneven_chunk_tree() ->
         ]
     ).
 
-generate_chunk_tree_and_validate_path(Data, ChallengeLocation) ->
+test_generate_chunk_tree_and_validate_path(Data, ChallengeLocation) ->
     ChunkStart = hb_util:floor_int(ChallengeLocation, ?DATA_CHUNK_SIZE),
     Chunk = binary:part(Data, ChunkStart, min(?DATA_CHUNK_SIZE, byte_size(Data) - ChunkStart)),
     #tx{ data_root = DataRoot, data_tree = DataTree } =
@@ -691,7 +554,8 @@ generate_chunk_tree_and_validate_path(Data, ChallengeLocation) ->
     {PathChunkID, StartOffset, EndOffset} =
         ar_merkle:validate_path(DataRoot, ChallengeLocation, byte_size(Data), DataPath),
     {PathChunkID, StartOffset, EndOffset} =
-        ar_merkle:validate_path(DataRoot, ChallengeLocation, byte_size(Data), DataPath, strict_data_split_ruleset),
+        ar_merkle:validate_path(DataRoot, ChallengeLocation, byte_size(Data),
+                DataPath, strict_data_split_ruleset),
     {PathChunkID, StartOffset, EndOffset} =
         ar_merkle:validate_path(DataRoot, ChallengeLocation, byte_size(Data),
                 DataPath, strict_borders_ruleset),
@@ -699,77 +563,74 @@ generate_chunk_tree_and_validate_path(Data, ChallengeLocation) ->
     ?assert(ChallengeLocation >= StartOffset),
     ?assert(ChallengeLocation < EndOffset).
 
+
 %%===================================================================
 %% json_struct_to_tx tests
 %%===================================================================
 
-json_struct_to_tx_test_() ->
-    [
-        fun test_json_struct_to_tx_happy/0,
-        fun test_json_struct_to_tx_failure/0
-    ].
-
-test_json_struct_to_tx_happy() ->
-    ID          = crypto:strong_rand_bytes(32),
-    Owner       = crypto:strong_rand_bytes(512),
-    LastTX      = crypto:strong_rand_bytes(32),
-    DataRoot    = crypto:strong_rand_bytes(32),
-    BaseStruct = #{
-        <<"format">>      => 1,
-        <<"id">>          => hb_util:encode(ID),
-        <<"last_tx">>     => hb_util:encode(LastTX),
-        <<"owner">>       => hb_util:encode(Owner),
-        <<"signature">>   => hb_util:encode(crypto:strong_rand_bytes(512)),
+json_struct_to_tx_happy_test() ->
+    ID32        = crypto:strong_rand_bytes(32),
+    Owner32     = crypto:strong_rand_bytes(32),
+    LastTx32    = crypto:strong_rand_bytes(32),
+    SigBin      = <<>>,
+    DataRoot32  = crypto:strong_rand_bytes(32),
+    Sig64       = crypto:strong_rand_bytes(64),
+    BaseStruct0 = #{
+        <<"id">>          => hb_util:encode(ID32),
+        <<"last_tx">>     => hb_util:encode(LastTx32),
+        <<"owner">>       => hb_util:encode(Owner32),
+        <<"signature">>   => hb_util:encode(SigBin),
         <<"quantity">>    => <<"100">>,
         <<"reward">>      => <<"10">>,
         <<"data_size">>   => <<"0">>,
         <<"data">>        => hb_util:encode(<<>>),
         <<"target">>      => <<>>,
         <<"tags">>        => [],
-        <<"data_root">>   => hb_util:encode(DataRoot)
+        <<"data_root">>   => hb_util:encode(DataRoot32)
     },
+
+    TagFun = fun(Key, Val) ->
+        #{ 
+            <<"name">> =>  hb_util:encode(Key),
+            <<"value">> => hb_util:encode(Val)
+        }
+    end,
 
     TargetBin = crypto:strong_rand_bytes(32),
     TargetB64 = hb_util:encode(TargetBin),
 
     Variants = [
         %% baseline – ensure empty tag list maintained
-        {BaseStruct, fun(TX) ->
+        {BaseStruct0, fun(TX) ->
             ?assertEqual(1, TX#tx.format),
             ?assertEqual([], TX#tx.tags)
         end},
-        {BaseStruct#{ <<"format">> => 2 }, fun(TX) -> ?assertEqual(2, TX#tx.format) end},
-        {BaseStruct#{ <<"format">> => <<"2">> }, fun(TX) -> ?assertEqual(2, TX#tx.format) end},
-        {BaseStruct#{ <<"quantity">> => <<"1234">> }, fun(TX) -> ?assertEqual(1234, TX#tx.quantity) end},
-        {BaseStruct#{ <<"reward">> => <<"567">> }, fun(TX) -> ?assertEqual(567, TX#tx.reward) end},
-        {BaseStruct#{ <<"tags">> => [{[
-                {<<"name">>, hb_util:encode(<<"tagname">>)},
-                {<<"value">>, hb_util:encode(<<"tagval">>)}
-            ]}] },
+        {BaseStruct0#{ <<"format">> => 2 }, fun(TX) -> ?assertEqual(2, TX#tx.format) end},
+        {BaseStruct0#{ <<"format">> => <<"2">> }, fun(TX) -> ?assertEqual(2, TX#tx.format) end},
+        {BaseStruct0#{ <<"quantity">> => <<"1234">> }, fun(TX) -> ?assertEqual(1234, TX#tx.quantity) end},
+        {BaseStruct0#{ <<"reward">> => <<"567">> }, fun(TX) -> ?assertEqual(567, TX#tx.reward) end},
+        {BaseStruct0#{ <<"tags">> => [TagFun(<<"tagname">>, <<"tagval">>)] },
             fun(TX) -> ?assertEqual([{<<"tagname">>, <<"tagval">>}], TX#tx.tags) end},
-        {BaseStruct#{ <<"target">> => TargetB64 },
+        {BaseStruct0#{ <<"denomination">> => <<"7">> }, fun(TX) -> ?assertEqual(7, TX#tx.denomination) end},
+        {BaseStruct0#{ <<"target">> => TargetB64 },
             fun(TX) -> ?assertEqual(TargetBin, TX#tx.target)end},
-        {BaseStruct#{ <<"data_root">> => hb_util:encode(DataRoot) },
-            fun(TX) -> ?assertEqual(DataRoot, TX#tx.data_root) end},
-        {BaseStruct#{ <<"data_size">> => <<"250">> },
-            fun(TX) -> ?assertEqual(250, TX#tx.data_size) end}
+        {BaseStruct0#{ <<"data_root">> => hb_util:encode(DataRoot32) },
+            fun(TX) -> ?assertEqual(DataRoot32, TX#tx.data_root) end},
+        {BaseStruct0#{ <<"data_size">> => <<"250">> },
+            fun(TX) -> ?assertEqual(250, TX#tx.data_size) end},
+        {BaseStruct0#{ <<"signature">> => hb_util:encode(Sig64) },
+            fun(TX) -> ?assertEqual(Sig64, TX#tx.signature) end}
     ],
 
     lists:foreach(
         fun({Struct, AssertFun}) ->
             Parsed = json_struct_to_tx(Struct),
-            RoundTripStruct = tx_to_json_struct(Parsed),
-            ?event({round_trip, {struct, Struct}, {round_trip_struct, RoundTripStruct}}),
-            ?assertEqual(
-                maps:without([<<"data_tree">>, <<"format">>], Struct),
-                maps:without([<<"data_tree">>, <<"format">>], RoundTripStruct)
-            ),
             %% constant fields always true across variants
             ?assert(is_record(Parsed, tx)),
-            ?assertEqual(ID, Parsed#tx.id),
-            ?assertEqual(Owner, Parsed#tx.owner),
-            ?assertEqual(ar_wallet:to_address(Owner), Parsed#tx.owner_address),
-            ?assertEqual(LastTX, Parsed#tx.last_tx),
+            ?assertEqual(ID32, Parsed#tx.id),
+            ?assertEqual(Owner32, Parsed#tx.owner),
+            ?assertEqual(ar_wallet:to_address(Owner32), Parsed#tx.owner_address),
+            ?assertEqual(LastTx32, Parsed#tx.anchor),
             ?assertEqual(?RSA_KEY_TYPE, Parsed#tx.signature_type),
             %% run variant-specific assertion
             AssertFun(Parsed)
@@ -777,15 +638,19 @@ test_json_struct_to_tx_happy() ->
         Variants
     ).
 
-test_json_struct_to_tx_failure() ->
+json_struct_to_tx_failure_test() ->
+    ID32        = crypto:strong_rand_bytes(32),
+    Owner32     = crypto:strong_rand_bytes(32),
+    LastTx32    = crypto:strong_rand_bytes(32),
+
     BaseStruct = #{
-        <<"id">>         => hb_util:encode(crypto:strong_rand_bytes(32)),
-        <<"last_tx">>    => hb_util:encode(crypto:strong_rand_bytes(32)),
-        <<"owner">>      => hb_util:encode(crypto:strong_rand_bytes(512)),
-        <<"signature">>  => hb_util:encode(crypto:strong_rand_bytes(512)),
-        <<"quantity">>   => <<"0">>,
-        <<"reward">>     => <<"0">>,
-        <<"data_size">>  => <<"0">>,
+        <<"id">>         => hb_util:encode(ID32),
+        <<"last_tx">>     => hb_util:encode(LastTx32),
+        <<"owner">>       => hb_util:encode(Owner32),
+        <<"signature">>   => <<>>,
+        <<"quantity">>    => <<"0">>,
+        <<"reward">>      => <<"0">>,
+        <<"data_size">>   => <<"0">>,
         <<"data">>       => <<>>,
         <<"target">>     => <<>>,
         <<"tags">>       => [],
@@ -796,47 +661,39 @@ test_json_struct_to_tx_failure() ->
     InvalidB64 = <<"!!not_base64!!">>,
 
     %% invalid tag variants
-    BadTagName   = [ {[{<<"name">>, InvalidB64}, {<<"value">>, hb_util:encode(<<"val">>)}]} ],
-    BadTagValue  = [ {[{<<"name">>, hb_util:encode(<<"key">>)}, {<<"value">>, InvalidB64}]} ],
+    BadTagName   = [ #{ <<"name">> => InvalidB64, <<"value">> => hb_util:encode(<<"val">>)} ],
+    BadTagValue  = [ #{ <<"name">> => hb_util:encode(<<"key">>), <<"value">> => InvalidB64} ],
 
     FailureCases = [
-        {invalid_format, BaseStruct#{ <<"format">> => <<"abc">> }, badarg},
-        {denomination_zero, BaseStruct#{ <<"denomination">> => <<"0">> }, {badmatch, false}},
-        {denomination_one, BaseStruct#{ <<"denomination">> => <<"1">> }, {invalid_field,denomination,1}},
-        {id_wrong_size, BaseStruct#{ <<"id">> => hb_util:encode(BadIDBin) }, {badmatch, 31}},
-        {quantity_nonnumeric, BaseStruct#{ <<"quantity">> => <<"notanumber">> }, badarg},
-        {reward_nonnumeric, BaseStruct#{ <<"reward">> => <<"xyz">> }, badarg},
-        {data_size_nonnumeric, BaseStruct#{ <<"data_size">> => <<"abc">> }, badarg},
-        {quantity_missing, maps:remove(<<"quantity">>, BaseStruct), badarg},
-        {id_invalid_b64, BaseStruct#{ <<"id">> => InvalidB64 }, badarg},
-        {owner_invalid_b64, BaseStruct#{ <<"owner">> => InvalidB64 }, badarg},
-        {last_tx_invalid_b64, BaseStruct#{ <<"last_tx">> => InvalidB64 }, badarg},
-        {signature_invalid_b64, BaseStruct#{ <<"signature">> => InvalidB64 }, badarg},
-        {data_invalid_b64, BaseStruct#{ <<"data">> => InvalidB64 }, badarg},
-        {data_root_invalid_b64, BaseStruct#{ <<"data_root">> => InvalidB64 }, badarg},
-        {tag_name_invalid_b64, BaseStruct#{ <<"tags">> => BadTagName }, badarg},
-        {tag_value_invalid_b64, BaseStruct#{ <<"tags">> => BadTagValue }, badarg},
-        {target_invalid_b64, BaseStruct#{ <<"target">> => InvalidB64 }, badarg},
-        {invalid_signature_type, BaseStruct#{ <<"owner">> => <<>> }, {badmatch, {ecdsa,secp256k1}}},
-        {no_signature, BaseStruct#{ <<"signature">> => <<>> }, {invalid_field,signature,<<>>}},
-        {default_signature, BaseStruct#{ <<"signature">> => hb_util:encode(?DEFAULT_SIG) }, {invalid_field,signature,?DEFAULT_SIG}},
-        {no_id, BaseStruct#{ <<"id">> => <<>> }, {badmatch,0}},
-        {default_id, BaseStruct#{ <<"id">> => hb_util:encode(?DEFAULT_ID) }, {invalid_field,id,?DEFAULT_ID}},
-        {default_owner, BaseStruct#{
-                <<"signature">> => hb_util:encode(crypto:strong_rand_bytes(512)),
-                <<"owner">> => hb_util:encode(?DEFAULT_OWNER)
-            },
-            {invalid_field,owner,?DEFAULT_OWNER}}
+        {"invalid_format", BaseStruct#{ <<"format">> => <<"abc">> }, badarg},
+        {"denomination_zero", BaseStruct#{ <<"denomination">> => <<"0">> }, {badmatch, false}},
+        {"id_wrong_size", BaseStruct#{ <<"id">> => hb_util:encode(BadIDBin) }, {badmatch, 31}},
+        {"quantity_nonnumeric", BaseStruct#{ <<"quantity">> => <<"notanumber">> }, badarg},
+        {"reward_nonnumeric", BaseStruct#{ <<"reward">> => <<"xyz">> }, badarg},
+        {"data_size_nonnumeric", BaseStruct#{ <<"data_size">> => <<"abc">> }, badarg},
+        {"quantity_missing", maps:remove(<<"quantity">>, BaseStruct), badarg},
+        {"id_invalid_b64", BaseStruct#{ <<"id">> => InvalidB64 }, badarg},
+        {"owner_invalid_b64", BaseStruct#{ <<"owner">> => InvalidB64 }, badarg},
+        {"last_tx_invalid_b64", BaseStruct#{ <<"last_tx">> => InvalidB64 }, badarg},
+        {"signature_invalid_b64", BaseStruct#{ <<"signature">> => InvalidB64 }, badarg},
+        {"data_invalid_b64", BaseStruct#{ <<"data">> => InvalidB64 }, badarg},
+        {"data_root_invalid_b64", BaseStruct#{ <<"data_root">> => InvalidB64 }, badarg},
+        {"tag_name_invalid_b64", BaseStruct#{ <<"tags">> => BadTagName }, badarg},
+        {"tag_value_invalid_b64", BaseStruct#{ <<"tags">> => BadTagValue }, badarg},
+        {"target_invalid_b64", BaseStruct#{ <<"target">> => InvalidB64 }, badarg},
+        {"invalid_signature_type", BaseStruct#{ <<"owner">> => <<>> }, {badmatch, {ecdsa,secp256k1}}}
         ],
 
     lists:foreach(
         fun({Label, Struct, Reason}) ->
-            hb_test_utils:assert_throws(
-                fun json_struct_to_tx/1,
-                [Struct],
-                Reason,
-                Label
-            )
+            Error = try 
+                json_struct_to_tx(Struct),
+                {failed_to_throw, Label}
+            catch
+                error:Reason -> ok;
+                error:Other -> {wrong_reason, Label, Other}
+            end,
+            ?assertEqual(ok, Error)
         end,
         FailureCases
     ).
@@ -844,19 +701,12 @@ test_json_struct_to_tx_failure() ->
 %%===================================================================
 %% tx_to_json_struct tests
 %%===================================================================
+tx_to_json_struct_happy_test() ->
+    Owner = crypto:strong_rand_bytes(32),
 
-tx_to_json_struct_test_() ->
-    [
-        fun test_tx_to_json_struct_happy/0,
-        fun test_tx_to_json_struct_failure/0
-    ].
-
-test_tx_to_json_struct_happy() ->
-    Owner = crypto:strong_rand_bytes(512),
-
-    BaseTX = (new())#tx{
+    BaseTX = #tx{
         id             = crypto:strong_rand_bytes(32),
-        last_tx        = crypto:strong_rand_bytes(32),
+        anchor         = crypto:strong_rand_bytes(32),
         owner          = Owner,
         signature_type = ?RSA_KEY_TYPE, 
         owner_address  = ar_wallet:to_address(Owner, ?RSA_KEY_TYPE), %% Not in JSON
@@ -872,27 +722,35 @@ test_tx_to_json_struct_happy() ->
         denomination   = 0
     },
 
+    %% Helper to create the expected tag structure for JSON
+    JsonTagFun = fun({Name, Value}) ->
+        #{ 
+            <<"name">> =>  hb_util:encode(Name),
+            <<"value">> => hb_util:encode(Value)
+        }
+    end,
+
     SpecificTarget = crypto:strong_rand_bytes(32),
     SpecificDataRoot = crypto:strong_rand_bytes(32),
     SpecificData = crypto:strong_rand_bytes(64),
 
     Variants = [
         %% {Label, ModifiedTX, ExpectedCheckerFun}
-        {baseline, BaseTX},
-        {format_2, BaseTX#tx{format = 2}},
-        {with_tags, BaseTX#tx{tags = [{<<"tag1">>, <<"val1">>}, {<<"TagTwo">>, <<"ValueTwo">>}]}},
-        {with_target, BaseTX#tx{target = SpecificTarget}},
-        {with_data_root, BaseTX#tx{data_root = SpecificDataRoot}},
-        {with_data, BaseTX#tx{data = SpecificData, data_size = byte_size(SpecificData)}},
-        {with_quantity_and_reward, BaseTX#tx{quantity = 12345, reward = 6789}}
+        {"baseline", BaseTX},
+        {"format_2", BaseTX#tx{format = 2}},
+        {"format_undefined", BaseTX#tx{format = undefined}},
+        {"positive_denomination", BaseTX#tx{denomination = 5}},
+        {"with_tags", BaseTX#tx{tags = [{<<"tag1">>, <<"val1">>}, {<<"TagTwo">>, <<"ValueTwo">>}]}},
+        {"with_target", BaseTX#tx{target = SpecificTarget}},
+        {"with_data_root", BaseTX#tx{data_root = SpecificDataRoot}},
+        {"with_data", BaseTX#tx{data = SpecificData, data_size = byte_size(SpecificData)}},
+        {"with_quantity_and_reward", BaseTX#tx{quantity = 12345, reward = 6789}}
     ],
 
     lists:foreach(
         fun({Label, TXVariant}) ->
             JsonStruct = tx_to_json_struct(TXVariant),
-            RoundtripTX = json_struct_to_tx(JsonStruct),
-            ?assertEqual(TXVariant, RoundtripTX),
-            ?assert(is_map(JsonStruct), Label),
+            ?assert(is_map(JsonStruct)),
             %% Assert common fields
             ExpectedFormat = case TXVariant#tx.format of
                 undefined -> 1;
@@ -900,7 +758,7 @@ test_tx_to_json_struct_happy() ->
             end,
             ?assertEqual(ExpectedFormat, maps:get(<<"format">>, JsonStruct), Label),
             ?assertEqual(hb_util:encode(TXVariant#tx.id), maps:get(<<"id">>, JsonStruct), Label),
-            ?assertEqual(hb_util:encode(TXVariant#tx.last_tx), maps:get(<<"last_tx">>, JsonStruct), Label),
+            ?assertEqual(hb_util:encode(TXVariant#tx.anchor), maps:get(<<"last_tx">>, JsonStruct), Label),
             ?assertEqual(hb_util:encode(TXVariant#tx.owner), maps:get(<<"owner">>, JsonStruct), Label),
             ?assertEqual(hb_util:encode(TXVariant#tx.target), maps:get(<<"target">>, JsonStruct), Label),
             ?assertEqual(hb_util:encode(TXVariant#tx.signature), maps:get(<<"signature">>, JsonStruct), Label),
@@ -913,19 +771,16 @@ test_tx_to_json_struct_happy() ->
                 maps:get(<<"denomination">>, JsonStruct, integer_to_binary(0)), Label),
             ?assertEqual([], maps:get(<<"data_tree">>, JsonStruct), Label), % Always empty list
 
-            ExpectedJsonTags = lists:map(
-                fun({Name, Value}) -> 
-                    {[{<<"name">>, hb_util:encode(Name)}, {<<"value">>, hb_util:encode(Value)}]}
-                end,
-                TXVariant#tx.tags
-            ),
-            ?assertEqual(ExpectedJsonTags, maps:get(<<"tags">>, JsonStruct), Label),
+            ExpectedJsonTags = lists:map(JsonTagFun, TXVariant#tx.tags),
+            ?assertEqual(ExpectedJsonTags, maps:get(<<"tags">>, JsonStruct), 
+                {tags_mismatch, Label}),
 
             %% Assert no extra keys are present
             BaseExpectedKeys = [
-                <<"format">>, <<"id">>, <<"last_tx">>, <<"owner">>, <<"tags">>, <<"target">>,
-                <<"quantity">>, <<"data">>, <<"data_size">>, <<"data_tree">>,
-                <<"data_root">>, <<"reward">>, <<"signature">>
+                <<"format">>, <<"id">>, <<"last_tx">>, <<"owner">>, <<"tags">>,
+                 <<"target">>, <<"quantity">>, <<"data">>, <<"data_size">>,
+                 <<"data_tree">>, <<"data_root">>, <<"reward">>,
+                 <<"signature">>
             ],
             ExpectedKeys =
                 case TXVariant#tx.denomination > 0 of
@@ -933,162 +788,50 @@ test_tx_to_json_struct_happy() ->
                     false -> lists:sort(BaseExpectedKeys)
                 end,
             ActualKeys = lists:sort(maps:keys(JsonStruct)),
-            ?assertEqual(ExpectedKeys, ActualKeys,
-                {extra_or_missing_keys, Label, ExpectedKeys, ActualKeys})
+            ?assertEqual(ExpectedKeys, ActualKeys, 
+                {extra_or_missing_keys, Label})
         end,
         Variants
     ).
 
-test_tx_to_json_struct_failure() ->
-    % Just run a single test to confirm that enforce_valid_signed_tx/1 is called. All other
-    % validations are performed by enforce_valid_signed_tx/1 and tested in the
-    % enforce_valid_signed_tx_test_() group.
-    TX = (new())#tx{ id = crypto:strong_rand_bytes(32), signature = ?DEFAULT_SIG },
-    Reason = {invalid_field, signature, ?DEFAULT_SIG},
-
-    hb_test_utils:assert_throws(
-        fun tx_to_json_struct/1,
-        [TX],
-        Reason,
-        "tx_to_json_struct/1 failed to enforce_valid_signed_tx"
-    ).
-
-
-%%===================================================================
-%% enforce_valid_tx tests
-%%===================================================================
-
-enforce_valid_tx_test_() ->
-    [
-        fun test_enforce_valid_tx_happy/0,
-        fun test_enforce_valid_tx_failure/0,
-        fun test_enforce_valid_unsigned_tx/0,
-        fun test_enforce_valid_signed_tx/0
-    ].
-
-test_enforce_valid_tx_happy() ->
-    BaseTX = new(),
-    ?assert(enforce_valid_tx(BaseTX), "Base valid TX"),
-
-    ValidTXs = [
-        {format_2, BaseTX#tx{format = 2}},
-        {id_32_bytes, BaseTX#tx{id = crypto:strong_rand_bytes(32)}},
-        {sig_65_bytes, BaseTX#tx{signature = crypto:strong_rand_bytes(65)}},
-        {sig_default_size, BaseTX#tx{signature = crypto:strong_rand_bytes(byte_size(?DEFAULT_SIG))}},
-        {target_32_bytes, BaseTX#tx{target = crypto:strong_rand_bytes(32)}},
-        {data_root_32_bytes, BaseTX#tx{data_root = crypto:strong_rand_bytes(32)}},
-        {simple_tag, BaseTX#tx{tags = [{<<"name">>, <<"value">>}]}},
-        {empty_tag_name_value, BaseTX#tx{tags = [{<<>>, <<>>}]}},
-        {max_len_tag_name, BaseTX#tx{tags = [{crypto:strong_rand_bytes(?MAX_TAG_NAME_SIZE), <<"val">>}]}},
-        {max_len_tag_value, BaseTX#tx{tags = [{<<"key">>, crypto:strong_rand_bytes(?MAX_TAG_VALUE_SIZE)}]}}
-    ],
-
-    lists:foreach(
-        fun({Label, TX}) ->
-            ?assert(enforce_valid_tx(TX), Label)
-        end,
-        ValidTXs
-    ).
-
-test_enforce_valid_tx_failure() ->
-    BaseTX = new(),
-
-    InvalidUnsignedID = crypto:strong_rand_bytes(1),
-    BadID31 = crypto:strong_rand_bytes(31),
-    BadID33 = crypto:strong_rand_bytes(33),
-    BadOwnerSize = crypto:strong_rand_bytes(byte_size(?DEFAULT_OWNER) - 1),
-    TooLongTagName = crypto:strong_rand_bytes(?MAX_TAG_NAME_SIZE + 1),
-    TooLongTagValue = crypto:strong_rand_bytes(?MAX_TAG_VALUE_SIZE + 1),
-
-    SigInvalidSize1 = crypto:strong_rand_bytes(1),
-    SigInvalidSize64 = crypto:strong_rand_bytes(64),
-    SigInvalidSize66 = crypto:strong_rand_bytes(66),
-    SigInvalidSize511 = crypto:strong_rand_bytes(511),
-    SigTooLong513 = crypto:strong_rand_bytes(byte_size(?DEFAULT_SIG)+1),
+tx_to_json_struct_failure_test() ->
+    RandBin32 = crypto:strong_rand_bytes(32),
+    BaseTX = #tx{
+        id = RandBin32, anchor = RandBin32, owner = RandBin32,
+        signature_type = ?RSA_KEY_TYPE, target = <<>>, quantity = 0,
+        data = <<>>, data_size = 0, data_root = <<>>, reward = 0,
+        signature = crypto:strong_rand_bytes(512), format = 1, tags = [],
+        denomination = 0
+    },
 
     FailureCases = [
-        {not_a_tx_record, not_a_tx_record_atom, {invalid_tx, not_a_tx_record_atom}},
-        {invalid_format_0, BaseTX#tx{format = 0}, {invalid_field, format, 0}},
-        {invalid_format_3, BaseTX#tx{format = 3}, {invalid_field, format, 3}},
-        {invalid_format_atom, BaseTX#tx{format = an_atom}, {invalid_field, format, an_atom}},
-        {id_too_short_31, BaseTX#tx{id = BadID31}, {invalid_field, id, BadID31}},
-        {id_too_long_33, BaseTX#tx{id = BadID33}, {invalid_field, id, BadID33}},
-        % {id_empty, BaseTX#tx{id = <<>>}, {invalid_field, id, <<>>}},
-        {unsigned_id_invalid_val, BaseTX#tx{unsigned_id = InvalidUnsignedID}, {invalid_field, unsigned_id, InvalidUnsignedID}},
-        %{last_tx_empty, BaseTX#tx{last_tx = <<>>}, {invalid_field, last_tx, <<>>}},
-        {last_tx_too_short_31, BaseTX#tx{last_tx = BadID31}, {invalid_field, last_tx, BadID31}},
-        {last_tx_too_long_33, BaseTX#tx{last_tx = BadID33}, {invalid_field, last_tx, BadID33}},
-        {owner_wrong_size, BaseTX#tx{owner = BadOwnerSize}, {invalid_field, owner, BadOwnerSize}},
-        {owner_empty, BaseTX#tx{owner = <<>>}, {invalid_field, owner, <<>>}},
-        {target_too_short_31, BaseTX#tx{target = BadID31}, {invalid_field, target, BadID31}},
-        {target_too_long_33, BaseTX#tx{target = BadID33}, {invalid_field, target, BadID33}},
-        {quantity_not_integer, BaseTX#tx{quantity = <<"100">>}, {invalid_field, quantity, <<"100">>}},
-        {data_not_binary, BaseTX#tx{data = an_atom}, {invalid_field, data, an_atom}},
-        %{manifest_not_undefined, BaseTX#tx{manifest = <<>>}, {invalid_field, manifest, <<>>}},
-        {data_size_not_integer, BaseTX#tx{data_size = an_atom}, {invalid_field, data_size, an_atom}},
-        {data_root_too_short_31, BaseTX#tx{data_root = BadID31}, {invalid_field, data_root, BadID31}},
-        {data_root_too_long_33, BaseTX#tx{data_root = BadID33}, {invalid_field, data_root, BadID33}},
-        {signature_invalid_size_1, BaseTX#tx{signature = SigInvalidSize1}, {invalid_field, signature, SigInvalidSize1}},
-        {signature_invalid_size_64, BaseTX#tx{signature = SigInvalidSize64}, {invalid_field, signature, SigInvalidSize64}},
-        {signature_invalid_size_66, BaseTX#tx{signature = SigInvalidSize66}, {invalid_field, signature, SigInvalidSize66}},
-        {signature_invalid_size_511, BaseTX#tx{signature = SigInvalidSize511}, {invalid_field, signature, SigInvalidSize511}},
-        {signature_too_long_513, BaseTX#tx{signature = SigTooLong513}, {invalid_field, signature, SigTooLong513}},
-        {signature_empty, BaseTX#tx{signature = <<>>}, {invalid_field, signature, <<>>}},
-        {reward_not_integer, BaseTX#tx{reward = 1.0}, {invalid_field, reward, 1.0}},
-        {denomination_not_zero, BaseTX#tx{denomination = 1}, {invalid_field, denomination, 1}},
-        {signature_type_not_rsa, BaseTX#tx{signature_type = ?ECDSA_KEY_TYPE}, {invalid_field, signature_type, ?ECDSA_KEY_TYPE}},
-        {tags_not_list, BaseTX#tx{tags = #{}}, {invalid_field, tags, #{}}},
-        {tag_name_not_binary, BaseTX#tx{tags = [{not_binary, <<"val">>}]}, {invalid_field, tag_name, not_binary}},
-        {tag_name_too_long, BaseTX#tx{tags = [{TooLongTagName, <<"val">>}]}, {invalid_field, tag_name, TooLongTagName}},
-        {tag_value_not_binary, BaseTX#tx{tags = [{<<"key">>, not_binary}]}, {invalid_field, tag_value, not_binary}},
-        {tag_value_too_long, BaseTX#tx{tags = [{<<"key">>, TooLongTagValue}]}, {invalid_field, tag_value, TooLongTagValue}},
-        {invalid_tag_form_atom, BaseTX#tx{tags = [not_a_tuple]}, {invalid_field, tag, not_a_tuple}},
-        {invalid_tag_form_list, BaseTX#tx{tags = [[<<"name">>, <<"value">>]]}, {invalid_field, tag, [<<"name">>, <<"value">>]} }
+        {"id_not_binary",        BaseTX#tx{id = not_a_binary}, badarg},
+        {"anchor_not_binary",    BaseTX#tx{anchor = 123}, badarg},
+        {"owner_not_binary",     BaseTX#tx{owner = an_atom}, badarg},
+        {"target_not_binary",    BaseTX#tx{target = {oops}}, badarg},
+        {"data_not_binary",      BaseTX#tx{data = 99.9}, badarg},
+        {"data_root_not_binary", BaseTX#tx{data_root = not_a_binary}, badarg},
+        {"signature_not_binary", BaseTX#tx{signature = make_ref()}, badarg},
+        {"quantity_not_integer", BaseTX#tx{quantity = <<"100">>}, badarg},
+        {"reward_not_integer",   BaseTX#tx{reward = 1.0}, badarg},
+        {"data_size_not_integer",BaseTX#tx{data_size = an_atom}, badarg},
+        {"denomination_not_integer_when_positive", BaseTX#tx{denomination = <<"5">>}, badarg},
+        {"tag_name_not_binary",  BaseTX#tx{tags = [{not_binary, <<"val">>}]}, badarg},
+        {"tag_value_not_binary", BaseTX#tx{tags = [{<<"key">>, not_binary}]}, badarg},
+        {"tags_not_list", BaseTX#tx{tags = #{}}, {case_clause, #{}}},
+        {"invalid_signature_type", BaseTX#tx{signature_type = ?ECDSA_KEY_TYPE}, {badmatch, {ecdsa,secp256k1}}}
     ],
 
     lists:foreach(
-        fun({Label, BadTX, ExpectedThrow}) ->
-            ?assertThrow(ExpectedThrow, enforce_valid_tx(BadTX), Label)
-        end,
-        FailureCases
-    ).
-
-test_enforce_valid_unsigned_tx() ->
-    BaseTX = (new())#tx{ id = ?DEFAULT_ID, signature = ?DEFAULT_SIG },
-    ?assert(enforce_valid_unsigned_tx(BaseTX), "Base valid unsigned TX"),
-
-    ID = crypto:strong_rand_bytes(32),
-    Signature = crypto:strong_rand_bytes(512),
-
-    FailureCases = [
-        {id_is_set, BaseTX#tx{id = ID}, {invalid_field, id, ID}},
-        {signature_is_set, BaseTX#tx{signature = Signature}, {invalid_field, signature, Signature}}
-    ],
-
-    lists:foreach(
-        fun({Label, BadTX, ExpectedThrow}) ->
-            ?assertThrow(ExpectedThrow, enforce_valid_unsigned_tx(BadTX), Label)
-        end,
-        FailureCases
-    ).
-
-test_enforce_valid_signed_tx() ->
-    BaseTX = (new())#tx{ 
-        id = crypto:strong_rand_bytes(32),
-        owner = crypto:strong_rand_bytes(512),
-        signature = crypto:strong_rand_bytes(512) },
-    ?assert(enforce_valid_signed_tx(BaseTX), "Base valid signed TX"),
-
-    FailureCases = [
-        {id_is_default, BaseTX#tx{id = ?DEFAULT_ID}, {invalid_field, id, ?DEFAULT_ID}},
-        {id_not_set, BaseTX#tx{id = <<>>}, {invalid_field, id, <<>>}},
-        {signature_is_default, BaseTX#tx{signature = ?DEFAULT_SIG}, {invalid_field, signature, ?DEFAULT_SIG}},
-        {signature_not_set, BaseTX#tx{signature = <<>>}, {invalid_field, signature, <<>>}}
-    ],
-
-    lists:foreach(
-        fun({Label, BadTX, ExpectedThrow}) ->
-            ?assertThrow(ExpectedThrow, enforce_valid_signed_tx(BadTX), Label)
+        fun({Label, TX, Reason}) ->
+            Error = try
+                tx_to_json_struct(TX),
+                {failed_to_throw, Label}
+            catch
+                error:Reason -> ok;
+                error:Other -> {wrong_reason, Label, Other}
+            end,
+            ?assertEqual(ok, Error)
         end,
         FailureCases
     ).

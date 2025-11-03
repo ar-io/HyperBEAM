@@ -25,7 +25,7 @@ start() ->
     Loaded =
         case hb_opts:load(Loc = hb_opts:get(hb_config_location, <<"config.flat">>)) of
             {ok, Conf} ->
-                ?event(boot, {loaded_config, Loc, Conf}),
+                ?event(boot, {loaded_config, {path, Loc}, {config, Conf}}),
                 Conf;
             {error, Reason} ->
                 ?event(boot, {failed_to_load_config, Loc, Reason}),
@@ -42,7 +42,8 @@ start() ->
     UpdatedStoreOpts = 
         case StoreOpts of
             no_store -> no_store;
-            _ when is_list(StoreOpts) -> hb_store_opts:apply(StoreOpts, StoreDefaults);
+            _ when is_list(StoreOpts) ->
+                hb_store_opts:apply(StoreOpts, StoreDefaults);
             _ -> StoreOpts
         end,
     hb_store:start(UpdatedStoreOpts),
@@ -54,7 +55,7 @@ start() ->
                 Loaded
             )
         ),
-    maybe_greeter(MergedConfig, PrivWallet),
+    maybe_greeter(Loaded, PrivWallet),
     start(
         Loaded#{
             priv_wallet => PrivWallet,
@@ -109,12 +110,12 @@ print_greeter(Config, PrivWallet) ->
         "==        ██████╔╝███████╗██║  ██║██║ ╚═╝ ██║ BUILD THE  ==~n"
         "==        ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝    FUTURE. ==~n"
         "===========================================================~n"
-        "== Node activate at: ~s ==~n"
+        "== Node live at: ~s ==~n"
         "== Operator: ~s ==~n"
         "===========================================================~n"
         "== Config:                                               ==~n"
         "===========================================================~n"
-        "   ~s~n"
+        "   ~s~n~n"
         "===========================================================~n",
         [
             ?HYPERBEAM_VERSION,
@@ -128,7 +129,9 @@ print_greeter(Config, PrivWallet) ->
                         ]
                     )
                 ),
-                35, leading, $ 
+                39,
+                leading,
+                $ % Note: Space after `$` is functional, not garbage.
             ),
             hb_util:human_id(ar_wallet:to_address(PrivWallet)),
             FormattedConfig
@@ -193,6 +196,7 @@ new_server(RawNodeMsg) ->
                 % Attempt to start the prometheus application, if possible.
                 try
                     application:ensure_all_started([prometheus, prometheus_cowboy]),
+                    prometheus_registry:register_collector(hb_metrics_collector),
                     ProtoOpts#{
                         metrics_callback =>
                             fun prometheus_cowboy2_instrumenter:observe/1,
@@ -239,7 +243,7 @@ new_server(RawNodeMsg) ->
     ),
     {ok, Listener, Port}.
 
-start_http3(ServerID, ProtoOpts, _NodeMsg) ->
+start_http3(ServerID, ProtoOpts, NodeMsg) ->
     ?event(http, {start_http3, ServerID}),
     Parent = self(),
     ServerPID =
@@ -250,34 +254,34 @@ start_http3(ServerID, ProtoOpts, _NodeMsg) ->
                 TransOpts = #{
                     socket_opts => [
                         {certfile, "test/test-tls.pem"},
-                        {keyfile, "test/test-tls.key"}
+                        {keyfile, "test/test-tls.key"},
+                        {port, Port = hb_opts:get(port, 8734, NodeMsg)}
                     ]
                 },
                 ProtoOpts
             ),
-            {ok, {_, GivenPort}} = quicer:sockname(Listener),
             ranch_server:set_new_listener_opts(
                 ServerID,
                 1024,
                 ranch:normalize_opts(
-                    hb_maps:to_list(TransOpts#{ port => GivenPort })
+                    hb_maps:to_list(TransOpts#{ port => Port })
                 ),
                 ProtoOpts,
                 []
             ),
-            ranch_server:set_addr(ServerID, {<<"localhost">>, GivenPort}),
+            ranch_server:set_addr(ServerID, {<<"localhost">>, Port}),
             % Bypass ranch's requirement to have a connection supervisor define
             % to support updating protocol opts.
             % Quicer doesn't use a connection supervisor, so we just spawn one
             % that does nothing.
             ConnSup = spawn(fun() -> http3_conn_sup_loop() end),
             ranch_server:set_connections_sup(ServerID, ConnSup),
-            Parent ! {ok, GivenPort},
+            Parent ! {ok, Port},
             receive stop -> stopped end
         end),
-    receive {ok, GivenPort} -> {ok, GivenPort, ServerPID}
+    receive {ok, Port} -> {ok, Port, ServerPID}
     after 2000 ->
-        {error, {timeout, staring_http3_server, ServerID}}
+        {error, {timeout, starting_http3_server, ServerID}}
     end.
 
 http3_conn_sup_loop() ->
@@ -358,7 +362,7 @@ handle_request(RawReq, Body, ServerID) ->
         {<<"/">>, <<>>} ->
             % If the request is for the root path, serve a redirect to the default 
             % request of the node.
-            cowboy_req:reply(
+            Req2 = cowboy_req:reply(
                 302,
                 #{
                     <<"location">> =>
@@ -369,7 +373,8 @@ handle_request(RawReq, Body, ServerID) ->
                         )
                 },
                 RawReq
-            );
+            ),
+            {ok, Req2, no_state};
         _ ->
             % The request is of normal AO-Core form, so we parse it and invoke
             % the meta@1.0 device to handle it.
@@ -379,7 +384,6 @@ handle_request(RawReq, Body, ServerID) ->
                     {cowboy_req, {explicit, Req}, {body, {string, Body}}}
                 }
             ),
-            TracePID = hb_tracer:start_trace(),
             % Parse the HTTP request into HyerBEAM's message format.
             ReqSingleton =
                 try hb_http:req_to_tabm_singleton(Req, Body, NodeMsg)
@@ -398,15 +402,13 @@ handle_request(RawReq, Body, ServerID) ->
                     {parsed_singleton,
                         {req_singleton, ReqSingleton},
                         {accept_codec, CommitmentCodec}},
-                    #{trace => TracePID}
+                    #{}
                 ),
-                % hb_tracer:record_step(TracePID, request_parsing),
                 % Invoke the meta@1.0 device to handle the request.
                 {ok, Res} =
                     dev_meta:handle(
                         NodeMsg#{
-                            commitment_device => CommitmentCodec,
-                            trace => TracePID
+                            commitment_device => CommitmentCodec
                         },
                         ReqSingleton
                     ),
@@ -426,12 +428,14 @@ handle_request(RawReq, Body, ServerID) ->
 
 %% @doc Return a 500 error response to the client.
 handle_error(Req, Singleton, Type, Details, Stacktrace, NodeMsg) ->
+    DetailsStr = hb_util:bin(hb_format:message(Details, NodeMsg, 1)),
+    StacktraceStr = hb_util:bin(hb_format:trace(Stacktrace)),
     ErrorMsg =
         #{
             <<"status">> => 500,
-            <<"type">> => hb_format:message(Type),
-            <<"details">> => hb_format:message(Details, NodeMsg, 1),
-            <<"stacktrace">> => hb_util:bin(hb_format:trace(Stacktrace))
+            <<"type">> => hb_util:bin(hb_format:message(Type)),
+            <<"details">> => DetailsStr,
+            <<"stacktrace">> => StacktraceStr
         },
     ErrorBin = hb_format:error(ErrorMsg, NodeMsg),
     ?event(
@@ -445,7 +449,13 @@ handle_error(Req, Singleton, Type, Details, Stacktrace, NodeMsg) ->
             }
         }
     ),
-    hb_http:reply(Req, Singleton, ErrorMsg, NodeMsg).
+    % Remove leading and trailing noise from the stacktrace and details.
+    FormattedErrorMsg =
+        ErrorMsg#{
+            <<"stacktrace">> => hb_util:bin(hb_format:remove_noise(StacktraceStr)),
+            <<"details">> => hb_util:bin(hb_format:remove_noise(DetailsStr))
+        },
+    hb_http:reply(Req, Singleton, FormattedErrorMsg, NodeMsg).
 
 %% @doc Return the list of allowed methods for the HTTP server.
 allowed_methods(Req, State) ->
@@ -602,7 +612,7 @@ set_opts_test() ->
         priv_wallet => Wallet = ar_wallet:new(), 
         port => rand:uniform(10000) + 10000 
     }),
-    Opts = ?MODULE:get_opts(#{ 
+    Opts = get_opts(#{ 
         http_server => hb_util:human_id(ar_wallet:to_address(Wallet))
     }),
     NodeHistory = hb_opts:get(node_history, [], Opts),
@@ -637,14 +647,16 @@ set_opts_test() ->
     ?assert(Key3 == <<"world3">>).
 
 restart_server_test() ->
+    % We force HTTP2, overriding the HTTP3 feature, because HTTP3 restarts don't work yet.
     Wallet = ar_wallet:new(),
     BaseOpts = #{
         <<"test-key">> => <<"server-1">>,
-        priv_wallet => Wallet
+        priv_wallet => Wallet,
+        protocol => http2
     },
     _ = start_node(BaseOpts),
     N2 = start_node(BaseOpts#{ <<"test-key">> => <<"server-2">> }),
     ?assertEqual(
         {ok, <<"server-2">>},
-        hb_http:get(N2, <<"/~meta@1.0/info/test-key">>, #{})
+        hb_http:get(N2, <<"/~meta@1.0/info/test-key">>, #{protocol => http2})
     ).

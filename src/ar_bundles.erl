@@ -1,57 +1,46 @@
 -module(ar_bundles).
--export([generate_id/2, type/1, map/1, hd/1, member/2, find/2]).
--export([manifest/1, manifest_item/1, parse_manifest/1]).
+-export([signer/1]).
+-export([id/1, id/2, hd/1, member/2, find/2]).
 -export([new_item/4, sign_item/2, verify_item/1]).
--export([encode_tags/1, decode_tags/1, add_list_tags/1]).
--export([serialize/1, serialize/2, deserialize/1, deserialize/2]).
+-export([encode_tags/1, decode_tags/1]).
+-export([serialize/1, deserialize/1, serialize_bundle/3]).
 -export([data_item_signature_data/1]).
--export([serialize_bundle_data/2]).
 -include("include/hb.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %%% @doc Module for creating, signing, and verifying Arweave data items and bundles.
--define(BUNDLE_TAGS, [
-    {<<"bundle-format">>, <<"binary">>},
-    {<<"bundle-version">>, <<"2.0.0">>}
-]).
-
--define(LIST_TAGS, [
-    {<<"map-format">>, <<"list">>}
-]).
 
 %%%===================================================================
 %%% Public interface.
 %%%===================================================================
 
-%% @doc Generate the ID for a given transaction.
-generate_id(Item, signed) ->
-    crypto:hash(sha256, Item#tx.signature);
-generate_id(Item, unsigned) ->
-    crypto:hash(
-        sha256,
-        data_item_signature_data(Item, unsigned)
-    ).
+%% @doc Return the address of the signer of an item, if it is signed.
+signer(#tx { owner = ?DEFAULT_OWNER }) -> undefined;
+signer(Item) -> crypto:hash(sha256, Item#tx.owner).
+
+%% @doc Return the ID of an item -- either signed or unsigned as specified.
+%% If the item is unsigned and the user requests the signed ID, we return
+%% the atom `not_signed'. In all other cases, we return the ID of the item.
+id(Item) -> id(Item, unsigned).
+id(Item, Type) when not is_record(Item, tx) ->
+    id(dev_arweave_common:normalize(Item), Type);
+id(Item = #tx { unsigned_id = ?DEFAULT_ID }, unsigned) ->
+    CorrectedItem = dev_arweave_common:reset_ids(Item),
+    CorrectedItem#tx.unsigned_id;
+id(#tx { unsigned_id = UnsignedID }, unsigned) ->
+    UnsignedID;
+id(#tx { id = ?DEFAULT_ID }, signed) ->
+    not_signed;
+id(#tx { id = ID }, signed) ->
+    ID.
 
 %% @doc Return the first item in a bundle-map/list.
 hd(#tx { data = #{ <<"1">> := Msg } }) -> Msg;
 hd(#tx { data = [First | _] }) -> First;
 hd(TX = #tx { data = Binary }) when is_binary(Binary) ->
-    ?MODULE:hd((deserialize(serialize(TX), binary))#tx.data);
+    ?MODULE:hd((deserialize(serialize(TX)))#tx.data);
 hd(#{ <<"1">> := Msg }) -> Msg;
 hd(_) -> undefined.
-
-%% @doc Convert an item containing a map or list into an Erlang map.
-map(#tx { data = Map }) when is_map(Map) -> Map;
-map(#tx { data = Data }) when is_list(Data) ->
-    maps:from_list(
-        lists:zipwith(
-            fun({Index, Item}) -> {integer_to_binary(Index), map(Item)} end,
-            lists:seq(1, length(Data)),
-            Data
-        )
-    );
-map(Item = #tx { data = Data }) when is_binary(Data) ->
-    (maybe_unbundle(Item))#tx.data.
 
 %% @doc Check if an item exists in a bundle-map/list.
 member(Key, Item) ->
@@ -71,7 +60,7 @@ find(Key, [Item|Rest]) ->
     end;
 find(Key, Item = #tx { id = Key }) -> Item;
 find(Key, Item = #tx { data = Data }) ->
-    case hb_tx:id(Item, unsigned) of
+    case id(Item, unsigned) of
         Key -> Item;
         _ ->
             case is_binary(Data) of
@@ -82,18 +71,13 @@ find(Key, Item = #tx { data = Data }) ->
 find(_Key, _) ->
     not_found.
 
-%% @doc Return the manifest item in a bundle-map/list.
-manifest_item(#tx { manifest = Manifest }) when is_record(Manifest, tx) ->
-    Manifest;
-manifest_item(_Item) -> undefined.
-
 %% @doc Create a new data item. Should only be used for testing.
 new_item(Target, Anchor, Tags, Data) ->
-    hb_tx:reset_ids(
+    dev_arweave_common:reset_ids(
         #tx{
             format = ans104,
             target = Target,
-            last_tx = Anchor,
+            anchor = Anchor,
             tags = Tags,
             data = Data,
             data_size = byte_size(Data)
@@ -103,10 +87,10 @@ new_item(Target, Anchor, Tags, Data) ->
 %% @doc Sign a data item.
 sign_item(_, undefined) -> throw(wallet_not_found);
 sign_item(RawItem, {PrivKey, {KeyType, Owner}}) ->
-    Item = (hb_tx:normalize_data(RawItem))#tx{format = ans104, owner = Owner, signature_type = KeyType},
+    Item = (dev_arweave_common:normalize(RawItem))#tx{format = ans104, owner = Owner, signature_type = KeyType},
     % Generate the signature from the data item's data segment in 'signed'-ready mode.
-    Sig = ar_wallet:sign(PrivKey, data_item_signature_data(Item, signed)),
-    hb_tx:reset_ids(Item#tx{signature = Sig}).
+    Sig = ar_wallet:sign(PrivKey, data_item_signature_data(Item)),
+    dev_arweave_common:reset_ids(Item#tx{signature = Sig}).
 
 %% @doc Verify the validity of a data item.
 verify_item(DataItem) ->
@@ -115,103 +99,9 @@ verify_item(DataItem) ->
     ValidTags = verify_data_item_tags(DataItem),
     ValidID andalso ValidSignature andalso ValidTags.
 
-type(Item) when is_record(Item, tx) ->
-    lists:keyfind(<<"bundle-map">>, 1, Item#tx.tags),
-    case lists:keyfind(<<"bundle-map">>, 1, Item#tx.tags) of
-        {<<"bundle-map">>, _} ->
-            case lists:keyfind(<<"map-format">>, 1, Item#tx.tags) of
-                {<<"map-format">>, <<"list">>} -> list;
-                _ -> map
-            end;
-        _ ->
-            binary
-    end;
-type(Data) when erlang:is_map(Data) ->
-    map;
-type(Data) when erlang:is_list(Data) ->
-    list;
-type(_) ->
-    binary.
-
 %%%===================================================================
 %%% Private functions.
 %%%===================================================================
-
-%% @doc Generate the data segment to be signed for a data item.
-data_item_signature_data(RawItem) ->
-    data_item_signature_data(RawItem, signed).
-data_item_signature_data(RawItem, unsigned) ->
-    data_item_signature_data(RawItem#tx { owner = ?DEFAULT_OWNER }, signed);
-data_item_signature_data(RawItem, signed) ->
-    true = enforce_valid_tx(RawItem),
-    NormItem = hb_tx:normalize_data(RawItem),
-    ar_deep_hash:hash([
-        utf8_encoded("dataitem"),
-        utf8_encoded("1"),
-        %% Only SignatureType 1 is supported for now (RSA 4096)
-        utf8_encoded("1"),
-        <<(NormItem#tx.owner)/binary>>,
-        <<(NormItem#tx.target)/binary>>,
-        <<(NormItem#tx.last_tx)/binary>>,
-        encode_tags(NormItem#tx.tags),
-        <<(NormItem#tx.data)/binary>>
-    ]).
-
-%% @doc Verify the data item's ID matches the signature.
-verify_data_item_id(DataItem) ->
-    ExpectedID = generate_id(DataItem, signed),
-    DataItem#tx.id == ExpectedID.
-
-%% @doc Verify the data item's signature.
-verify_data_item_signature(DataItem) ->
-    SignatureData = data_item_signature_data(DataItem),
-    %?event({unsigned_id, hb_util:encode(id(DataItem, unsigned)), hb_util:encode(SignatureData)}),
-    ar_wallet:verify(
-        {DataItem#tx.signature_type, DataItem#tx.owner}, SignatureData, DataItem#tx.signature
-    ).
-
-%% @doc Verify the validity of the data item's tags.
-verify_data_item_tags(DataItem) ->
-    ValidCount = length(DataItem#tx.tags) =< 128,
-    ValidTags = lists:all(
-        fun({Name, Value}) ->
-            byte_size(Name) =< 1024 andalso byte_size(Value) =< 3072
-        end,
-        DataItem#tx.tags
-    ),
-    ValidCount andalso ValidTags.
-
-manifest(Map) when is_map(Map) -> Map;
-manifest(#tx { manifest = undefined }) -> undefined;
-manifest(#tx { manifest = ManifestTX }) ->
-    hb_json:decode(ManifestTX#tx.data).
-
-parse_manifest(Item) when is_record(Item, tx) ->
-    parse_manifest(Item#tx.data);
-parse_manifest(Bin) ->
-    hb_json:decode(Bin).
-
-%% @doc Convert a #tx record to its binary representation.
-serialize(not_found) -> throw(not_found);
-serialize(TX) -> serialize(TX, binary).
-serialize(TX, binary) when is_binary(TX) -> TX;
-serialize(RawTX, binary) ->
-    true = enforce_valid_tx(RawTX),
-    TX = hb_tx:normalize(RawTX),
-    EncodedTags = encode_tags(TX#tx.tags),
-    <<
-        (encode_signature_type(TX#tx.signature_type))/binary,
-        (TX#tx.signature)/binary,
-        (TX#tx.owner)/binary,
-        (encode_optional_field(TX#tx.target))/binary,
-        (encode_optional_field(TX#tx.last_tx))/binary,
-        (encode_tags_size(TX#tx.tags, EncodedTags))/binary,
-        EncodedTags/binary,
-        (TX#tx.data)/binary
-    >>;
-serialize(TX, json) ->
-    true = enforce_valid_tx(TX),
-    hb_json:encode(hb_message:convert(TX, <<"ans104@1.0">>, #{})).
 
 %% @doc Take an item and ensure that it is of valid form. Useful for ensuring
 %% that a message is viable for serialization/deserialization before execution.
@@ -226,10 +116,6 @@ enforce_valid_tx(TX) ->
         hb_util:check_type(TX, message),
         {invalid_tx, TX}
     ),
-	hb_util:ok_or_throw(TX,
-		hb_util:check_value(TX#tx.format, [ans104]),
-		{invalid_field, format, TX#tx.format}
-	),
     hb_util:ok_or_throw(TX,
         hb_util:check_size(TX#tx.id, [0, 32]),
         {invalid_field, id, TX#tx.id}
@@ -239,8 +125,8 @@ enforce_valid_tx(TX) ->
         {invalid_field, unsigned_id, TX#tx.unsigned_id}
     ),
     hb_util:ok_or_throw(TX,
-        hb_util:check_size(TX#tx.last_tx, [0, 32]),
-        {invalid_field, last_tx, TX#tx.last_tx}
+        hb_util:check_size(TX#tx.anchor, [0, 32]),
+        {invalid_field, anchor, TX#tx.anchor}
     ),
     hb_util:ok_or_throw(TX,
         hb_util:check_size(TX#tx.owner, [0, byte_size(?DEFAULT_OWNER)]),
@@ -254,6 +140,10 @@ enforce_valid_tx(TX) ->
         hb_util:check_size(TX#tx.signature, [0, 65, byte_size(?DEFAULT_SIG)]),
         {invalid_field, signature, TX#tx.signature}
     ),
+    hb_util:ok_or_throw(TX,
+        hb_util:check_type(TX#tx.tags, list),
+        {invalid_field, tags, TX#tx.tags}
+    ),
     lists:foreach(
         fun({Name, Value}) ->
             hb_util:ok_or_throw(TX,
@@ -266,11 +156,11 @@ enforce_valid_tx(TX) ->
             ),
             hb_util:ok_or_throw(TX,
                 hb_util:check_type(Value, binary),
-                {invalid_field, tag_value, Value}
+                {invalid_field, tag_value, {Name, Value}}
             ),
             hb_util:ok_or_throw(TX,
                 hb_util:check_size(Value, {range, 0, ?MAX_TAG_VALUE_SIZE}),
-                {invalid_field, tag_value, Value}
+                {invalid_field, tag_value, {Name, Value}}
             );
             (InvalidTagForm) ->
                 throw({invalid_field, tag, InvalidTagForm})
@@ -286,61 +176,109 @@ enforce_valid_tx(TX) ->
     ),
     true.
 
-add_bundle_tags(Tags) -> ?BUNDLE_TAGS ++ (Tags -- ?BUNDLE_TAGS).
 
-add_list_tags(Tags) ->
-    (?BUNDLE_TAGS ++ (Tags -- ?BUNDLE_TAGS)) ++ ?LIST_TAGS.
+%% @doc Generate the data segment to be signed for a data item.
+data_item_signature_data(RawItem) ->
+    true = enforce_valid_tx(RawItem),
+    {_, Item} = dev_arweave_common:serialize_data(RawItem),
+    ar_deep_hash:hash([
+        utf8_encoded("dataitem"),
+        utf8_encoded("1"),
+        %% Only SignatureType 1 is supported for now (RSA 4096)
+        utf8_encoded("1"),
+        <<(Item#tx.owner)/binary>>,
+        <<(Item#tx.target)/binary>>,
+        <<(Item#tx.anchor)/binary>>,
+        encode_tags(Item#tx.tags),
+        <<(Item#tx.data)/binary>>
+    ]).
 
-add_manifest_tags(Tags, ManifestID) ->
-    lists:filter(
-        fun
-            ({<<"bundle-map">>, _}) -> false;
-            (_) -> true
+%% @doc Verify the data item's ID matches the signature.
+verify_data_item_id(DataItem) ->
+    ExpectedID = crypto:hash(sha256, DataItem#tx.signature),
+    DataItem#tx.id == ExpectedID.
+
+%% @doc Verify the data item's signature.
+verify_data_item_signature(DataItem) ->
+    SignatureData = data_item_signature_data(DataItem),
+    ar_wallet:verify(
+        {DataItem#tx.signature_type, DataItem#tx.owner}, SignatureData, DataItem#tx.signature
+    ).
+
+%% @doc Verify the validity of the data item's tags.
+verify_data_item_tags(DataItem) ->
+    ValidCount = length(DataItem#tx.tags) =< 128,
+    ValidTags = lists:all(
+        fun({Name, Value}) ->
+            byte_size(Name) =< 1024 andalso byte_size(Value) =< 3072
         end,
-        Tags
-    ) ++ [{<<"bundle-map">>, hb_util:encode(ManifestID)}].
+        DataItem#tx.tags
+    ),
+    ValidCount andalso ValidTags.
 
+%% @doc Convert an ans104 #tx record to its binary representation.
+serialize(not_found) -> throw(not_found);
+serialize(TX) when is_binary(TX) -> TX;
+serialize(RawTX) when is_record(RawTX, tx) ->
+    true = enforce_valid_tx(RawTX),
+    {_, TX} = dev_arweave_common:serialize_data(RawTX),
+    EncodedTags = encode_tags(TX#tx.tags),
+    <<
+        (encode_signature_type(TX#tx.signature_type))/binary,
+        (TX#tx.signature)/binary,
+        (TX#tx.owner)/binary,
+        (encode_optional_field(TX#tx.target))/binary,
+        (encode_optional_field(TX#tx.anchor))/binary,
+        (encode_tags_size(TX#tx.tags, EncodedTags))/binary,
+        EncodedTags/binary,
+        (TX#tx.data)/binary
+    >>;
+serialize(TX) ->
+    throw({cannot_serialize_tx, must_be_binary_or_tx, TX}).
+
+serialize_bundle(list, List, Normalize) when is_list(List) ->
+    FinalizedData = finalize_bundle_data(
+        lists:map(
+            fun(Item) ->
+                to_serialized_pair(Item, Normalize, signed)
+            end,
+            List)
+    ),
+    {undefined, FinalizedData};
+serialize_bundle(BundleType, Map, Normalize) when is_map(Map) ->
+    % TODO: Make this compatible with the normal manifest spec.
+    % For now we just serialize the map to a JSON string of Key=>TXID
+    BinItems = maps:map(
+        fun(_, Item) -> 
+            to_serialized_pair(Item, Normalize, unsigned)
+        end,
+        Map),
+    {Manifest, BinItems2} = maybe_generate_manifest(BundleType, BinItems, Normalize),
+    FinalizedData = finalize_bundle_data(BinItems2),
+    {Manifest, FinalizedData};
+serialize_bundle(_, Data, _Normalize) when is_binary(Data) ->
+    {undefined, Data};
+serialize_bundle(_, Data, _Normalize) ->
+    throw({cannot_serialize_tx_data, must_be_list_or_map_or_binary, Data}).
+
+maybe_generate_manifest(map, BinItems, Normalize) ->
+    Index = maps:map(fun(_, {TXID, _}) -> hb_util:encode(TXID) end, BinItems),
+    Manifest = new_manifest(Index),
+    {ManifestID, ManifestSerialized} =
+        to_serialized_pair(Manifest, Normalize, unsigned),
+    {Manifest, [{ManifestID, ManifestSerialized} | maps:values(BinItems)]};
+maybe_generate_manifest(_, BinItems, _Normalize) ->
+    {undefined, maps:values(BinItems)}.
 
 finalize_bundle_data(Processed) ->
-    Length = <<(length(Processed)):256/integer>>,
-    Index = <<<<(byte_size(Data)):256/integer, ID/binary>> || {ID, Data} <- Processed>>,
+    Length = <<(length(Processed)):256/little-integer>>,
+    Index = <<<<(byte_size(Data)):256/little-integer, ID/binary>> || {ID, Data} <- Processed>>,
     Items = <<<<Data/binary>> || {_, Data} <- Processed>>,
     <<Length/binary, Index/binary, Items/binary>>.
 
-to_serialized_pair(Item) ->
-    % TODO: This is a hack to get the ID of the item. We need to do this because we may not
-    % have the ID in 'item' if it is just a map/list. We need to make this more efficient.
-    Serialized = serialize(hb_tx:reset_ids(hb_tx:normalize(Item)), binary),
-    Deserialized = deserialize(Serialized, binary),
-    UnsignedID = hb_tx:id(Deserialized, unsigned),
-    {UnsignedID, Serialized}.
-
-serialize_bundle_data(Map, TX) when is_map(Map) ->
-    % TODO: Make this compatible with the normal manifest spec.
-    % For now we just serialize the map to a JSON string of Key=>TXID
-    BinItems = maps:map(fun(_, Item) -> to_serialized_pair(Item) end, Map),
-    Index = maps:map(fun(_, {TXID, _}) -> hb_util:encode(TXID) end, BinItems),
-    NewManifest = new_manifest(Index),
-    Bin = finalize_bundle_data([to_serialized_pair(NewManifest) | maps:values(BinItems)]),
-    TX#tx{
-        data = Bin,
-        manifest = NewManifest,
-        tags = add_manifest_tags(
-            add_bundle_tags(TX#tx.tags),
-            hb_tx:id(NewManifest, unsigned)
-        )
-    };
-serialize_bundle_data(List, TX) when is_list(List) ->
-    Bin = finalize_bundle_data(lists:map(fun to_serialized_pair/1, List)),
-    TX#tx{
-        data = Bin,
-        tags = add_bundle_tags(TX#tx.tags)
-    };
-serialize_bundle_data(Data, _TX) ->
-    throw({cannot_serialize_tx_data, must_be_map_or_list, Data}).
-
 new_manifest(Index) ->
-    TX = hb_tx:normalize(#tx{
+    ?event({new_manifest, Index}),
+    TX = dev_arweave_common:normalize(#tx{
         format = ans104,
         tags = [
             {<<"data-protocol">>, <<"bundle-map">>},
@@ -349,6 +287,29 @@ new_manifest(Index) ->
         data = hb_json:encode(Index)
     }),
     TX.
+
+to_serialized_pair(Item, Normalize, Signed) when is_binary(Item) ->
+    % Support bundling of bare binary payloads by wrapping them in a TX that
+    % is explicitly marked as a binary data item.
+    to_serialized_pair(
+        #tx{ tags = [{<<"ao-type">>, <<"binary">>}], data = Item },
+        Normalize, Signed);
+to_serialized_pair(Item, true, Signed) ->
+    to_serialized_pair(dev_arweave_common:normalize(Item), false, Signed);
+to_serialized_pair(Item, false, Signed) ->
+    ?event({to_serialized_pair, Item}),
+    % TODO: This is a hack to get the ID of the item. We need to do this because we may not
+    % have the ID in 'item' if it is just a map/list. We need to make this more efficient.
+    Serialized = serialize(Item),
+    Deserialized = deserialize(Serialized),
+    case id(Deserialized, Signed) of
+        not_signed ->
+            % A signed ID was requested, but the item is not signed, so fall
+            % back to unsigned.
+            {id(Deserialized, unsigned), Serialized};
+        ID ->
+            {ID, Serialized}
+    end.
 
 %% @doc Only RSA 4096 is currently supported.
 %% Note: the signature type '1' corresponds to RSA 4096 -- but it is is written in
@@ -362,7 +323,7 @@ encode_signature_type(_) ->
 encode_optional_field(<<>>) ->
     <<0>>;
 encode_optional_field(Field) ->
-    <<1:8/integer, Field/binary>>.
+    <<1:8/little-integer, Field/binary>>.
 
 %% @doc Encode a UTF-8 string to binary.
 utf8_encoded(String) ->
@@ -430,93 +391,67 @@ encode_vint(ZigZag, Acc) ->
         _ -> encode_vint(ZigZagShifted, [VIntByte bor 16#80 | Acc])
     end.
 
-%% @doc Convert binary data back to a #tx record.
+%% @doc Convert binary data back to #tx record(s).
+%% When deserializing a binary, it is assumed the binary is an ans104 *item*,
+%% and *not* a bundle. It may be an item that contains a bundle, though.
+%% When deserializing a #tx it is the #tx.data that is deserialized (after
+%% consulting the #tx.tags to confirm that data format).
 deserialize(not_found) -> throw(not_found);
-deserialize(Binary) -> deserialize(Binary, binary).
-deserialize(Item, binary) when is_record(Item, tx) ->
+deserialize(Item) when is_record(Item, tx) ->
     maybe_unbundle(Item);
-deserialize(Binary, binary) ->
-    %try
+deserialize(Binary) ->
+    deserialize_item(Binary).
+
+deserialize_item(Binary) ->
     {SignatureType, Signature, Owner, Rest} = decode_signature(Binary),
     {Target, Rest2} = decode_optional_field(Rest),
     {Anchor, Rest3} = decode_optional_field(Rest2),
     {Tags, Data} = decode_tags(Rest3),
     maybe_unbundle(
-        hb_tx:reset_ids(#tx{
+        dev_arweave_common:reset_ids(#tx{
             format = ans104,
             signature_type = SignatureType,
             signature = Signature,
             owner = Owner,
             target = Target,
-            last_tx = Anchor,
+            anchor = Anchor,
             tags = Tags,
             data = Data,
             data_size = byte_size(Data)
         })
-    );
-%catch
-%    _:_:_Stack ->
-%        {error, invalid_item}
-%end;
-deserialize(Bin, json) ->
-    try
-        Map = hb_json:decode(Bin),
-        hb_message:convert(Map, <<"ans104@1.0">>, #{})
-    catch
-        _:_:_Stack ->
-            {error, invalid_item}
-    end.
+    ).
 
 maybe_unbundle(Item) ->
-    Format = lists:keyfind(<<"bundle-format">>, 1, Item#tx.tags),
-    Version = lists:keyfind(<<"bundle-version">>, 1, Item#tx.tags),
-    case {Format, Version} of
-        {{<<"bundle-format">>, <<"binary">>}, {<<"bundle-version">>, <<"2.0.0">>}} ->
-            maybe_map_to_list(maybe_unbundle_map(Item));
-        _ ->
-            Item
-    end.
-
-maybe_map_to_list(Item) ->
-    case lists:keyfind(<<"map-format">>, 1, Item#tx.tags) of
-        {<<"map-format">>, <<"List">>} ->
-            unbundle_list(Item);
-        _ ->
-            Item
+    case dev_arweave_common:type(Item) of
+        list -> unbundle_list(Item);
+        binary -> Item;
+        map -> unbundle_map(Item)
     end.
 
 unbundle_list(Item) ->
-    Item#tx{
-        data =
-            lists:map(
-                fun(Index) ->
-                    maps:get(list_to_binary(integer_to_list(Index)), Item#tx.data)
-                end,
-                lists:seq(1, maps:size(Item#tx.data))
-            )
-    }.
+    case unbundle(Item#tx.data) of
+        detached -> Item#tx{data = detached};
+        Items -> Item#tx{data = hb_util:list_to_numbered_message(Items)}
+    end.
 
-maybe_unbundle_map(Bundle) ->
-    case lists:keyfind(<<"bundle-map">>, 1, Bundle#tx.tags) of
-        {<<"bundle-map">>, MapTXID} ->
-            case unbundle(Bundle) of
-                detached -> Bundle#tx { data = detached };
-                Items ->
-                    MapItem = find_single_layer(hb_util:decode(MapTXID), Items),
-                    Map = hb_json:decode(MapItem#tx.data),
-                    Bundle#tx{
-                        manifest = MapItem,
-                        data =
-                            maps:map(
-                                fun(_K, TXID) ->
-                                    find_single_layer(hb_util:decode(TXID), Items)
-                                end,
-                                Map
-                            )
-                    }
-            end;
-        _ ->
-            unbundle(Bundle)
+unbundle_map(Item) ->
+    MapTXID = dev_arweave_common:tagfind(<<"bundle-map">>, Item#tx.tags, <<>>),
+    case unbundle(Item#tx.data) of
+        detached -> Item#tx{data = detached};
+        Items ->
+            MapItem = find_single_layer(hb_util:decode(MapTXID), Items),
+            Map = hb_json:decode(MapItem#tx.data),
+            Item#tx{
+                manifest = MapItem,
+                data =
+                    maps:map(
+                        fun(_K, TXID) ->
+                            find_single_layer(
+                                hb_util:decode(TXID), Items)
+                        end,
+                        Map
+                    )
+            }
     end.
 
 %% @doc An internal helper for finding an item in a single-layer of a bundle.
@@ -531,16 +466,16 @@ find_single_layer(UnsignedID, Items) ->
             throw({cannot_find_item, hb_util:encode(UnsignedID)})
     end.
 
-unbundle(Item = #tx{data = <<Count:256/integer, Content/binary>>}) ->
+unbundle(<<Count:256/little-integer, Content/binary>>) ->
     {ItemsBin, Items} = decode_bundle_header(Count, Content),
-    Item#tx{data = decode_bundle_items(Items, ItemsBin)};
-unbundle(#tx{data = <<>>}) -> detached.
+    decode_bundle_items(Items, ItemsBin);
+unbundle(<<>>) -> detached.
 
 decode_bundle_items([], <<>>) ->
     [];
 decode_bundle_items([{_ID, Size} | RestItems], ItemsBin) ->
     [
-            deserialize(binary:part(ItemsBin, 0, Size))
+            deserialize_item(binary:part(ItemsBin, 0, Size))
         |
             decode_bundle_items(
                 RestItems,
@@ -555,7 +490,7 @@ decode_bundle_items([{_ID, Size} | RestItems], ItemsBin) ->
 decode_bundle_header(Count, Bin) -> decode_bundle_header(Count, Bin, []).
 decode_bundle_header(0, ItemsBin, Header) ->
     {ItemsBin, lists:reverse(Header)};
-decode_bundle_header(Count, <<Size:256/integer, ID:32/binary, Rest/binary>>, Header) ->
+decode_bundle_header(Count, <<Size:256/little-integer, ID:32/binary, Rest/binary>>, Header) ->
     decode_bundle_header(Count - 1, Rest, [{ID, Size} | Header]).
 
 %% @doc Decode the signature from a binary format. Only RSA 4096 is currently supported.
@@ -564,7 +499,9 @@ decode_bundle_header(Count, <<Size:256/integer, ID:32/binary, Rest/binary>>, Hea
 decode_signature(<<1, 0, Signature:512/binary, Owner:512/binary, Rest/binary>>) ->
     {{rsa, 65537}, Signature, Owner, Rest};
 decode_signature(Other) ->
-    ?event({error_decoding_signature, Other}),
+    ?event({error_decoding_signature,
+        {sig_type, {explicit, binary:part(Other, 0, 2)}},
+        {binary, Other}}),
     unsupported_tx_format.
 
 %% @doc Decode tags from a binary format using Apache Avro.
@@ -579,7 +516,7 @@ decode_tags(<<_TagCount:64/little-integer, _TagSize:64/little-integer, Binary/bi
 
 decode_optional_field(<<0, Rest/binary>>) ->
     {<<>>, Rest};
-decode_optional_field(<<1:8/integer, Field:32/binary, Rest/binary>>) ->
+decode_optional_field(<<1:8/little-integer, Field:32/binary, Rest/binary>>) ->
     {Field, Rest}.
 
 %% @doc Decode Avro blocks (for tags) from binary.
@@ -625,29 +562,10 @@ decode_vint(<<Byte, Rest/binary>>, Result, Shift) ->
     end.
 
 %%%===================================================================
-%%% Tests
+%%% Unit tests.
 %%%===================================================================
 
-ar_bundles_test_() ->
-    [
-        {timeout, 30, fun test_no_tags/0},
-        {timeout, 30, fun test_with_tags/0},
-        {timeout, 30, fun test_with_zero_length_tag/0},
-        {timeout, 30, fun test_unsigned_data_item_id/0},
-        {timeout, 30, fun test_unsigned_data_item_normalization/0},
-        {timeout, 30, fun test_empty_bundle/0},
-        {timeout, 30, fun test_bundle_with_one_item/0},
-        {timeout, 30, fun test_bundle_with_two_items/0},
-        {timeout, 30, fun test_recursive_bundle/0},
-        {timeout, 30, fun test_bundle_map/0},
-        {timeout, 30, fun test_basic_member_id/0},
-        {timeout, 30, fun test_deep_member/0},
-        {timeout, 30, fun test_extremely_large_bundle/0},
-        {timeout, 30, fun test_serialize_deserialize_deep_signed_bundle/0},
-        {timeout, 30, fun test_encode_tags/0}
-    ].
-
-test_encode_tags() ->
+encode_tags_test() ->
     BinValue = <<1, 2, 3, 255, 254>>,
     TestCases = [
         {simple_string_tags, [{<<"tag1">>, <<"value1">>}]},
@@ -682,10 +600,7 @@ test_encode_tags() ->
     WrappedEmpty = <<0:64/little, 0:64/little>>,
     {[], <<>>} = decode_tags(WrappedEmpty).
 
-run_test() ->
-    test_with_zero_length_tag().
-
-test_no_tags() ->
+no_tags_test() ->
     {Priv, Pub} = ar_wallet:new(),
     {KeyType, Owner} = Pub,
     Target = crypto:strong_rand_bytes(32),
@@ -699,7 +614,7 @@ test_no_tags() ->
     ?assertEqual(true, verify_item(SignedDataItem2)),
     assert_data_item(KeyType, Owner, Target, Anchor, [], <<"data">>, SignedDataItem2).
 
-test_with_tags() ->
+with_tags_test() ->
     {Priv, Pub} = ar_wallet:new(),
     {KeyType, Owner} = Pub,
     Target = crypto:strong_rand_bytes(32),
@@ -714,8 +629,8 @@ test_with_tags() ->
     ?assertEqual(true, verify_item(SignedDataItem2)),
     assert_data_item(KeyType, Owner, Target, Anchor, Tags, <<"taggeddata">>, SignedDataItem2).
 
-test_with_zero_length_tag() ->
-    Item = hb_tx:normalize(#tx{
+with_zero_length_tag_test() ->
+    Item = dev_arweave_common:normalize(#tx{
         format = ans104,
         tags = [
             {<<"normal-tag-1">>, <<"tag1">>},
@@ -728,16 +643,20 @@ test_with_zero_length_tag() ->
     Deserialized = deserialize(Serialized),
     ?assertEqual(Item, Deserialized).
 
-test_unsigned_data_item_id() ->
+unsigned_data_item_id_test() ->
     Item1 = deserialize(
-        serialize(hb_tx:reset_ids(#tx{format = ans104, data = <<"data1">>}))
+        serialize(
+            dev_arweave_common:reset_ids(
+                #tx{format = ans104, data = <<"data1">>}))
     ),
     Item2 = deserialize(
-        serialize(hb_tx:reset_ids(#tx{format = ans104, data = <<"data2">>}))),
+        serialize(
+            dev_arweave_common:reset_ids(
+                #tx{format = ans104, data = <<"data2">>}))),
     ?assertNotEqual(Item1#tx.unsigned_id, Item2#tx.unsigned_id).
 
-test_unsigned_data_item_normalization() ->
-    NewItem = hb_tx:normalize(#tx{ format = ans104, data = <<"Unsigned data">> }),
+unsigned_data_item_normalization_test() ->
+    NewItem = dev_arweave_common:normalize(#tx{ format = ans104, data = <<"Unsigned data">> }),
     ReNormItem = deserialize(serialize(NewItem)),
     ?assertEqual(NewItem, ReNormItem).
 
@@ -745,28 +664,32 @@ assert_data_item(KeyType, Owner, Target, Anchor, Tags, Data, DataItem) ->
     ?assertEqual(KeyType, DataItem#tx.signature_type),
     ?assertEqual(Owner, DataItem#tx.owner),
     ?assertEqual(Target, DataItem#tx.target),
-    ?assertEqual(Anchor, DataItem#tx.last_tx),
+    ?assertEqual(Anchor, DataItem#tx.anchor),
     ?assertEqual(Tags, DataItem#tx.tags),
     ?assertEqual(Data, DataItem#tx.data),
     ?assertEqual(byte_size(Data), DataItem#tx.data_size).
 
-test_empty_bundle() ->
-    Bundle = serialize([]),
+empty_bundle_test() ->
+    Bundle = serialize(dev_arweave_common:normalize([])),
+    ?event(debug_test, {bundle, {explicit, Bundle}}),
     BundleItem = deserialize(Bundle),
     ?assertEqual(#{}, BundleItem#tx.data).
 
-test_bundle_with_one_item() ->
+bundle_with_one_item_test() ->
     Item = new_item(
         crypto:strong_rand_bytes(32),
         crypto:strong_rand_bytes(32),
         [],
         ItemData = crypto:strong_rand_bytes(1000)
     ),
-    Bundle = serialize([Item]),
-    BundleItem = deserialize(Bundle),
-    ?assertEqual(ItemData, (maps:get(<<"1">>, BundleItem#tx.data))#tx.data).
+    ?event(debug_test, {item, Item}),
+    Bundle = serialize(dev_arweave_common:normalize([Item])),
+    ?event(debug_test, {bundle, {explicit, Bundle}}),
+    Deserialized = deserialize(Bundle),
+    ?event(debug_test, {bundle_item, Deserialized}),
+    ?assertEqual(ItemData, (maps:get(<<"1">>, Deserialized#tx.data))#tx.data).
 
-test_bundle_with_two_items() ->
+bundle_with_two_items_test() ->
     Item1 = new_item(
         crypto:strong_rand_bytes(32),
         crypto:strong_rand_bytes(32),
@@ -779,29 +702,29 @@ test_bundle_with_two_items() ->
         [{<<"tag1">>, <<"value1">>}, {<<"tag2">>, <<"value2">>}],
         ItemData2 = crypto:strong_rand_bytes(32)
     ),
-    Bundle = serialize([Item1, Item2]),
+    Bundle = serialize(dev_arweave_common:normalize([Item1, Item2])),
     BundleItem = deserialize(Bundle),
     ?assertEqual(ItemData1, (maps:get(<<"1">>, BundleItem#tx.data))#tx.data),
     ?assertEqual(ItemData2, (maps:get(<<"2">>, BundleItem#tx.data))#tx.data).
 
-test_recursive_bundle() ->
+recursive_bundle_test() ->
     W = ar_wallet:new(),
     Item1 = sign_item(#tx{
         id = crypto:strong_rand_bytes(32),
-        last_tx = crypto:strong_rand_bytes(32),
+        anchor = crypto:strong_rand_bytes(32),
         data = <<1:256/integer>>
     }, W),
     Item2 = sign_item(#tx{
         id = crypto:strong_rand_bytes(32),
-        last_tx = crypto:strong_rand_bytes(32),
+        anchor = crypto:strong_rand_bytes(32),
         data = [Item1]
     }, W),
     Item3 = sign_item(#tx{
         id = crypto:strong_rand_bytes(32),
-        last_tx = crypto:strong_rand_bytes(32),
+        anchor = crypto:strong_rand_bytes(32),
         data = [Item2]
     }, W),
-    Bundle = serialize([Item3]),
+    Bundle = serialize(dev_arweave_common:normalize([Item3])),
     BundleItem = deserialize(Bundle),
     #{<<"1">> := UnbundledItem3} = BundleItem#tx.data,
     #{<<"1">> := UnbundledItem2} = UnbundledItem3#tx.data,
@@ -810,7 +733,7 @@ test_recursive_bundle() ->
     % TODO: Verify bundled lists...
     ?assertEqual(Item1#tx.data, UnbundledItem1#tx.data).
 
-test_bundle_map() ->
+bundle_map_test() ->
     W = ar_wallet:new(),
     Item1 = sign_item(#tx{
         format = ans104,
@@ -818,24 +741,24 @@ test_bundle_map() ->
     }, W),
     Item2 = sign_item(#tx{
         format = ans104,
-        last_tx = crypto:strong_rand_bytes(32),
+        anchor = crypto:strong_rand_bytes(32),
         data = #{<<"key1">> => Item1}
     }, W),
-    Bundle = serialize(Item2),
+    Bundle = serialize(dev_arweave_common:normalize(Item2)),
     BundleItem = deserialize(Bundle),
     ?assertEqual(Item1#tx.data, (maps:get(<<"key1">>, BundleItem#tx.data))#tx.data),
     ?assert(verify_item(BundleItem)).
 
-test_extremely_large_bundle() ->
+extremely_large_bundle_test() ->
     W = ar_wallet:new(),
     Data = crypto:strong_rand_bytes(100_000_000),
-    Norm = hb_tx:normalize(#tx { data = #{ <<"key">> => #tx { data = Data } } }),
+    Norm = dev_arweave_common:normalize(#tx { data = #{ <<"key">> => #tx { data = Data } } }),
     Signed = sign_item(Norm, W),
-    Serialized = serialize(Signed),
+    Serialized = serialize(dev_arweave_common:normalize(Signed)),
     Deserialized = deserialize(Serialized),
     ?assert(verify_item(Deserialized)).
 
-test_basic_member_id() ->
+basic_member_id_test() ->
     W = ar_wallet:new(),
     Item = sign_item(
         #tx{
@@ -844,10 +767,10 @@ test_basic_member_id() ->
         W
     ),
     ?assertEqual(true, member(Item#tx.id, Item)),
-    ?assertEqual(true, member(hb_tx:id(Item, unsigned), Item)),
+    ?assertEqual(true, member(id(Item, unsigned), Item)),
     ?assertEqual(false, member(crypto:strong_rand_bytes(32), Item)).
 
-test_deep_member() ->
+deep_member_test() ->
     W = ar_wallet:new(),
     Item = sign_item(
         #tx{
@@ -860,35 +783,212 @@ test_deep_member() ->
         },
         W
     ),
-    Item2 = deserialize(serialize(sign_item(
+    Item2 = deserialize(serialize(dev_arweave_common:normalize(sign_item(
         #tx{
             data = #{ <<"key2">> => Item }
         },
         W
-    ))),
+    )))),
     ?assertEqual(true, member(<<"key1">>, Item2)),
     ?assertEqual(true, member(<<"key2">>, Item2)),
     ?assertEqual(true, member(Item#tx.id, Item2)),
     ?assertEqual(true, member(Item2#tx.id, Item2)),
-    ?assertEqual(true, member(hb_tx:id(Item, unsigned), Item2)),
-    ?assertEqual(true, member(hb_tx:id(Item2, unsigned), Item2)),
+    ?assertEqual(true, member(id(Item, unsigned), Item2)),
+    ?assertEqual(true, member(id(Item2, unsigned), Item2)),
     ?assertEqual(false, member(crypto:strong_rand_bytes(32), Item2)).
 
-test_serialize_deserialize_deep_signed_bundle() ->
+serialize_deserialize_deep_signed_bundle_test() ->
     W = ar_wallet:new(),
     % Test that we can serialize, deserialize, and get the same IDs back.
     Item1 = sign_item(#tx{data = <<"item1_data">>}, W),
     Item2 = sign_item(#tx{data = #{<<"key1">> => Item1}}, W),
-    Bundle = serialize(Item2),
+    Bundle = serialize(dev_arweave_common:normalize(Item2)),
     Deser2 = deserialize(Bundle),
-    hb_tx:format(Deser2),
     #{ <<"key1">> := Deser1 } = Deser2#tx.data,
-    hb_tx:format(Deser1),
-    ?assertEqual(hb_tx:id(Item2, unsigned), hb_tx:id(Deser2, unsigned)),
-    ?assertEqual(hb_tx:id(Item2, signed), hb_tx:id(Deser2, signed)),
-    ?assertEqual(hb_tx:id(Item1, unsigned), hb_tx:id(Deser1, unsigned)),
-    ?assertEqual(hb_tx:id(Item1, signed), hb_tx:id(Deser1, signed)),
+    ?assertEqual(id(Item2, unsigned), id(Deser2, unsigned)),
+    ?assertEqual(id(Item2, signed), id(Deser2, signed)),
+    ?assertEqual(id(Item1, unsigned), id(Deser1, unsigned)),
+    ?assertEqual(id(Item1, signed), id(Deser1, signed)),
     % Test that we can sign an item twice and the unsigned ID is the same.
     Item3 = sign_item(Item2, W),
-    ?assertEqual(hb_tx:id(Item3, unsigned), hb_tx:id(Item2, unsigned)),
+    ?assertEqual(id(Item3, unsigned), id(Item2, unsigned)),
     ?assert(verify_item(Item3)).
+
+%% @doc Deserialize and reserialize a data item produced by the arbundles JS
+%% library. This validates both that we can read an arbundles.js data itme
+%% but also that our data item serialization code is compatible with it.
+arbundles_item_roundtrip_test() ->
+    {ok, Bin} = file:read_file(<<"test/arbundles.js/ans104-item.bundle">>),
+    ?event(debug_test, {bin, {explicit, Bin}}),
+    Item = deserialize(Bin),
+    ?event(debug_test, {item, Item}),
+    ?assert(verify_item(Item)),
+    ?assertEqual(<<"hello world">>, Item#tx.data),
+    ?assertEqual(11, Item#tx.data_size),    
+    ?assertEqual(
+        hb_util:decode(<<"eJmUI4azsmhRCZRf3MaX0CFDHwWn9oStIirZma3ql68">>),
+        Item#tx.target),
+    ?assertEqual(?DEFAULT_ANCHOR, Item#tx.anchor),
+    ?assertEqual([
+        {<<"Content-Type">>, <<"text/plain">>},
+        {<<"App-Name">>, <<"arbundles-gen">>}
+    ], Item#tx.tags),
+    Serialized = serialize(dev_arweave_common:normalize(Item)),
+    ?assertEqual(Bin, Serialized).
+
+arbundles_list_bundle_roundtrip_test() ->
+    W = ar_wallet:new(),
+    {ok, Bin} = file:read_file(<<"test/arbundles.js/ans104-list-bundle.bundle">>),
+    TX = sign_item(#tx{ 
+        format = ans104,
+        data = Bin,
+        data_size = byte_size(Bin),
+        tags = ?BUNDLE_TAGS
+    }, W),
+    ?event(debug_test, {tx, {explicit, TX}}),
+    ?assert(verify_item(TX)),
+
+    Deserialized = deserialize(TX),
+    ?event(debug_test, {deserialized, Deserialized}),
+    ?assertEqual(3, maps:size(Deserialized#tx.data)),
+    #{<<"1">> := Item1, <<"2">> := Item2, <<"3">> := Item3} = 
+        Deserialized#tx.data,
+    ?assertEqual(<<"first">>, Item1#tx.data),
+    ?assertEqual([{<<"Type">>, <<"list">>}, {<<"Index">>, <<"0">>}], Item1#tx.tags),
+    ?assertEqual(
+        hb_util:decode(<<"Tu6LHQdEVK7lNF3AOAHrVBjl2CFvQizd5VaWBvdFRSs">>),
+        Item1#tx.target),
+    ?assertEqual(
+        hb_util:decode(<<"N1k7gUBck6EBgmApl58Nxxhe3TTATSHeEyyXhdFVe9A">>),
+        Item1#tx.anchor),
+    ?assertEqual(<<"second">>, Item2#tx.data),
+    ?assertEqual([{<<"Type">>, <<"list">>}, {<<"Index">>, <<"1">>}], Item2#tx.tags),
+    ?assertEqual(?DEFAULT_TARGET, Item2#tx.target),
+    ?assertEqual(
+        hb_util:decode(<<"fgAVH_xJJU1tkzWSmSfBfb_KBX8sa_FQ2b7YWuE08Ko">>),
+        Item2#tx.anchor),
+    ?assertEqual(<<"third">>, Item3#tx.data),
+    ?assertEqual([{<<"Type">>, <<"list">>}, {<<"Index">>, <<"2">>}], Item3#tx.tags),
+    ?assertEqual(?DEFAULT_TARGET, Item3#tx.target),
+    ?assertEqual(?DEFAULT_ANCHOR, Item3#tx.anchor),
+    ?assert(verify_item(Item1)),
+    ?assert(verify_item(Item2)),
+    ?assert(verify_item(Item3)),
+
+    Reserialized = dev_arweave_common:normalize(Deserialized),
+    ?event(debug_test, {reserialized, Reserialized}),
+    ?assert(verify_item(Reserialized)),
+    ?assertEqual(Bin, Reserialized#tx.data),
+    ok.
+
+arbundles_single_list_bundle_roundtrip_test() ->
+    W = ar_wallet:new(),
+    {ok, Bin} = file:read_file(<<"test/arbundles.js/ans104-single-list-bundle.bundle">>),
+    % Deserialize and verify the arbundles.js bundle
+    TX = sign_item(#tx{ 
+        format = ans104,
+        data = Bin,
+        data_size = byte_size(Bin),
+        tags = ?BUNDLE_TAGS
+    }, W),
+    ?event(debug_test, {tx, {explicit, TX}}),
+    ?assert(verify_item(TX)),
+    
+    Deserialized = deserialize(TX),
+    ?event(debug_test, {deserialized, Deserialized}),
+    ?assertEqual(1, maps:size(Deserialized#tx.data)),
+    #{<<"1">> := Item} = Deserialized#tx.data,
+    ?event(debug_test, {item, Item}),
+    ?assertEqual(
+        <<"IchWLlJKLaCqKd4KW6BcDKe560XpfgFuPHXjjK8tfgA">>,
+        hb_util:encode(Item#tx.id)),
+    ?assertEqual(<<"only">>, Item#tx.data),
+    ?assertEqual([{<<"Type">>, <<"list">>}, {<<"Index">>, <<"1">>}], Item#tx.tags),
+    ?assert(verify_item(Item)),
+
+    Reserialized = dev_arweave_common:normalize(Deserialized),
+    ?event(debug_test, {reserialized, Reserialized}),
+    ?assert(verify_item(Reserialized)),
+    ?assertEqual(Bin, Reserialized#tx.data),
+    ok.
+
+%% @doc Read a serialized bundle from disk, assert it is as it should be, and
+%% do a full deserialize/serialize roundtrip to confirm idempotency.
+%% The file in question was validated against dha-team/arbundles v1.0.3 on
+%% 2025-09-07, so this test also serves to validate that ar_bundles.erl can
+%% read and write to a bundle that is compatible with dha-team/arbundles.
+arbundles_map_bundle_roundtrip_test() ->
+    {ok, Bin} = file:read_file(<<"test/arbundles.js/ans104-map-bundle-erlang.bundle">>),
+    
+    Deserialized = deserialize(Bin),
+    ?event(debug_test, {deserialized, Deserialized}),
+    ?assert(verify_item(Deserialized)),
+    ?assertEqual([
+        {<<"bundle-format">>, <<"binary">>},
+        {<<"bundle-version">>, <<"2.0.0">>},
+        {<<"bundle-map">>, <<"DwgwetwuSXGrnQiHFziiRLPKIucN5ua9KWkHA-nRQJQ">>}
+    ], Deserialized#tx.tags),
+
+    #{ <<"key1">> := Item1, <<"key2">> := Item2 } = Deserialized#tx.data,
+    ?assert(verify_item(Item1)),
+    ?assert(verify_item(Item2)),
+    ?assertEqual(<<"item1_data">>, Item1#tx.data),
+    ?assertEqual(<<"item2_data">>, Item2#tx.data),
+
+    Manifest = Deserialized#tx.manifest,
+    ?event(debug_test, {manifest, Manifest}),
+    ?assertNotEqual(undefined, Manifest),
+    ?assertEqual(false, dev_arweave_common:is_signed(Manifest)),
+    ?assertEqual([
+        {<<"data-protocol">>, <<"bundle-map">>},
+        {<<"variant">>, <<"0.0.1">>}
+    ], Manifest#tx.tags),
+    Index = hb_json:decode(Manifest#tx.data),
+    ?event(debug_test, {index, Index}),
+    ?assertEqual(#{ 
+        <<"key1">> => <<"zZXTg5K_9G3EnpMUOhp9QX1tqa8dJa32p2JPkQtiPT0">>,
+        <<"key2">> => <<"m4D2fObeaz5qFkhpacO1K351jaksg2j0-wpyCetAOb4">>
+    }, Index),
+    
+    Reserialized = serialize(dev_arweave_common:normalize(Deserialized)),
+    ?event(debug_test, {reserialized, Reserialized}),
+    ?assertEqual(Bin, Reserialized).
+
+%% @doc This test generates and writes a map bundle to a file so that we can
+%% validate that it is handled correctly by dha-team/arbundles. You can
+%% validate the bundle by running
+%% `node test/arbundles.js/validate-bundle.js test/arbundles.js/ans104-map-bundle-erlang.bundle`
+%% 
+%% We will also use this file in the arbundles_map_bundle_roundtrip_test as
+%% a regression test to confirm that ar_bundles.erl continues to validate
+%% and generate a compatible bundle.
+%% 
+%% To regenerate the .bundle file, rename the test to
+%% `generate_and_write_map_bundle_test'
+generate_and_write_map_bundle_test_disabled() ->
+    W = ar_wallet:new(),
+    Item1 = sign_item(#tx{
+        format = ans104,
+        data = <<"item1_data">>
+    }, W),
+    Item2 = sign_item(#tx{
+        format = ans104,
+        data = <<"item2_data">>
+    }, W),
+    Bundle = sign_item(#tx{
+        format = ans104,
+        data = #{
+            <<"key1">> => Item1,
+            <<"key2">> => Item2
+        }
+    }, W),
+    ?event(debug_test, {bundle, {explicit, Bundle}}),
+    ?assert(verify_item(Bundle)),
+    Serialized = serialize(Bundle),
+    ?event(debug_test, {serialized, {explicit, Serialized}}),
+
+    Deserialized = deserialize(Serialized),
+    ?event(debug_test, {deserialized, {explicit, Deserialized}}),
+    ?assert(verify_item(Deserialized)),
+    ok = file:write_file(
+        <<"test/arbundles.js/ans104-map-bundle-erlang.bundle">>, Serialized).

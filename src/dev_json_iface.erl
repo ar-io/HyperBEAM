@@ -38,7 +38,7 @@
 %%% Public interface helpers:
 -export([message_to_json_struct/2, json_to_message/2]).
 %%% Test helper exports:
--export([generate_stack/1, generate_stack/2, generate_aos_msg/2]).
+-export([generate_stack/1, generate_stack/2, generate_stack/3, generate_aos_msg/2]).
 -include_lib("eunit/include/eunit.hrl").
 -include("include/hb.hrl").
 
@@ -98,38 +98,73 @@ denormalize_message(Message, Opts) ->
 message_to_json_struct(RawMsg, Opts) ->
     message_to_json_struct(RawMsg, [owner_as_address], Opts).
 message_to_json_struct(RawMsg, Features, Opts) ->
-    DeNormTABM = 
+    TABM = 
         hb_message:convert(
             hb_private:reset(RawMsg),
             tabm,
             Opts
         ),
-    TABM = hb_tx:normalize_data_field(DeNormTABM),
     MsgWithoutCommitments = hb_maps:without([<<"commitments">>], TABM, Opts),
     ID = hb_message:id(RawMsg, all),
     ?event({encoding, {id, ID}, {msg, RawMsg}}),
-    Last = hb_ao:get(<<"anchor">>, {as, <<"message@1.0">>, MsgWithoutCommitments}, <<>>, Opts),
-	Owner =
+	{Owner, Signature, PublicKey} =
         case hb_message:signers(RawMsg, Opts) of
-            [] -> <<>>;
+            [] -> {<<>>, <<>>, <<>>};
             [Signer|_] ->
+                {ok, _, Commitment} =
+                    hb_message:commitment(Signer, RawMsg, Opts),
+                CommitmentSignature =
+                    hb_ao:get(<<"signature">>, Commitment, <<>>, Opts),
+                CommitmentKeyId =
+                    dev_codec_httpsig_keyid:remove_scheme_prefix(
+                        hb_ao:get(<<"keyid">>, Commitment, <<>>, Opts)
+                    ),
                 case lists:member(owner_as_address, Features) of
-                    true -> hb_util:native_id(Signer);
+                    true -> 
+                        {
+                            hb_util:native_id(Signer),
+                            CommitmentSignature,
+                            CommitmentKeyId
+                        };
                     false ->
-                        {ok, Commitment} =
-                            hb_message:commitment(Signer, RawMsg, Opts),
-                        hb_ao:get_first(
-                            [
-                                {Commitment, <<"key">>},
-                                {Commitment, <<"owner">>}
-                            ],
-                            no_signing_public_key_found_in_commitment,
-                            Opts
-                        )
+                        CommitmentOwner =
+                            hb_ao:get_first(
+                                [
+                                    {Commitment, <<"key">>},
+                                    {Commitment, <<"owner">>}
+                                ],
+                                no_signing_public_key_found_in_commitment,
+                                Opts
+                            ),
+                        {CommitmentOwner, CommitmentSignature, CommitmentKeyId}
                 end
         end,
-    Data = hb_ao:get(<<"data">>, {as, <<"message@1.0">>, MsgWithoutCommitments}, <<>>, Opts),
-    Target = hb_ao:get(<<"target">>, {as, <<"message@1.0">>, MsgWithoutCommitments}, <<>>, Opts),
+    Last =
+        hb_ao:get(
+            <<"anchor">>,
+            {as, <<"message@1.0">>, MsgWithoutCommitments},
+            <<>>,
+            Opts
+        ),
+    DataBytes =
+        hb_ao:get(
+            <<"data">>,
+            {as, <<"message@1.0">>, MsgWithoutCommitments},
+            <<>>,
+            Opts
+        ),
+    Data =
+        case hb_util:is_printable_string(DataBytes) of
+            true -> DataBytes;
+            false -> null 
+        end,
+    Target =
+        hb_ao:get(
+            <<"target">>,
+            {as, <<"message@1.0">>, MsgWithoutCommitments},
+            <<>>,
+            Opts
+        ),
     % Set "From" if From-Process is Tag or set with "Owner" address
     From =
         hb_ao:get(
@@ -138,7 +173,6 @@ message_to_json_struct(RawMsg, Features, Opts) ->
             hb_util:encode(Owner),
             Opts
         ),
-    Sig = hb_ao:get(<<"signature">>, {as, <<"message@1.0">>, MsgWithoutCommitments}, <<>>, Opts),
     #{
         <<"Id">> => safe_to_id(ID),
         % NOTE: In Arweave TXs, these are called "last_tx"
@@ -150,13 +184,13 @@ message_to_json_struct(RawMsg, Features, Opts) ->
         <<"Target">> => safe_to_id(Target),
         <<"Data">> => Data,
         <<"Signature">> =>
-            case byte_size(Sig) of
+            case byte_size(Signature) of
                 0 -> <<>>;
-                512 -> hb_util:encode(Sig);
-                _ -> Sig
-            end
+                512 -> hb_util:encode(Signature);
+                _ -> Signature
+            end,
+        <<"PublicKey">> => PublicKey
     }.
-
 %% @doc Prepare the tags of a message as a key-value list, for use in the 
 %% construction of the JSON-Struct message.
 prepare_tags(Msg, Opts) ->
@@ -386,9 +420,7 @@ preprocess_results(Msg, Opts) ->
 
 %% @doc Convert a message with tags into a map of their key-value pairs.
 tags_to_map(Msg, Opts) ->
-    NormMsg = hb_util:lower_case_key_map(
-        hb_ao:normalize_keys(Msg, Opts), 
-    Opts),
+    NormMsg = hb_util:lower_case_keys(hb_ao:normalize_keys(Msg, Opts), Opts),
     RawTags = hb_maps:get(<<"tags">>, NormMsg, [], Opts),
     TagList =
         [
@@ -416,17 +448,24 @@ postprocess_outbox(Msg, Proc, Opts) ->
 
 %%% Tests
 
+normalize_test_opts(Opts) ->
+    Opts#{
+        priv_wallet => hb_opts:get(priv_wallet, hb:wallet(), Opts)
+    }.
+
 test_init() ->
     application:ensure_all_started(hb).
 
 generate_stack(File) ->
     generate_stack(File, <<"WASM">>).
-generate_stack(File, _Mode) ->
+generate_stack(File, Mode) ->
+    generate_stack(File, Mode, #{}).
+generate_stack(File, _Mode, RawOpts) ->
+    Opts = normalize_test_opts(RawOpts),
     test_init(),
-    Wallet = hb:wallet(),
-    Msg0 = dev_wasm:cache_wasm_image(File),
-    Image = hb_ao:get(<<"image">>, Msg0, #{}),
-    Msg1 = Msg0#{
+    Msg0 = dev_wasm:cache_wasm_image(File, Opts),
+    Image = hb_ao:get(<<"image">>, Msg0, Opts),
+    Base = Msg0#{
         <<"device">> => <<"stack@1.0">>,
         <<"device-stack">> =>
             [
@@ -445,13 +484,15 @@ generate_stack(File, _Mode) ->
                 <<"image">> => Image,
                 <<"scheduler">> => hb:address(),
                 <<"authority">> => hb:address()
-            }, Wallet)
+            }, Opts)
     },
-    {ok, Msg2} = hb_ao:resolve(Msg1, <<"init">>, #{}),
-    Msg2.
+    {ok, Req} = hb_ao:resolve(Base, <<"init">>, Opts),
+    Req.
 
 generate_aos_msg(ProcID, Code) ->
-    Wallet = hb:wallet(),
+    generate_aos_msg(ProcID, Code, #{}).
+generate_aos_msg(ProcID, Code, RawOpts) ->
+    Opts = normalize_test_opts(RawOpts),
     hb_message:commit(#{
         <<"path">> => <<"compute">>,
         <<"body">> => 
@@ -459,42 +500,44 @@ generate_aos_msg(ProcID, Code) ->
                 <<"action">> => <<"Eval">>,
                 <<"data">> => Code,
                 <<"target">> => ProcID
-            }, Wallet),
+            }, Opts),
         <<"block-height">> => 1
-    }, Wallet).
+    }, Opts).
 
 basic_aos_call_test_() ->
     {timeout, 20, fun() ->
 		Msg = generate_stack("test/aos-2-pure-xs.wasm"),
 		Proc = hb_ao:get(<<"process">>, Msg, #{ hashpath => ignore }),
 		ProcID = hb_message:id(Proc, all),
-		{ok, Msg3} =
+		{ok, Res} =
 			hb_ao:resolve(
 				Msg,
 				generate_aos_msg(ProcID, <<"return 1+1">>),
 				#{}
 			),
-		?event({res, Msg3}),
-		Data = hb_ao:get(<<"results/data">>, Msg3, #{}),
+		?event({res, Res}),
+		Data = hb_ao:get(<<"results/data">>, Res, #{}),
 		?assertEqual(<<"2">>, Data)
 	end}.
 
 aos_stack_benchmark_test_() ->
     {timeout, 20, fun() ->
         BenchTime = 5,
-        RawWASMMsg = generate_stack("test/aos-2-pure-xs.wasm"),
-        Proc = hb_ao:get(<<"process">>, RawWASMMsg, #{ hashpath => ignore }),
-        ProcID = hb_ao:get(id, Proc, #{}),
+        Opts = #{ store => hb_test_utils:test_store() },
+        RawWASMMsg = generate_stack("test/aos-2-pure-xs.wasm", <<"WASM">>, Opts),
+        Proc = hb_ao:get(<<"process">>, RawWASMMsg, Opts#{ hashpath => ignore }),
+        ProcID = hb_ao:get(id, Proc, Opts),
+        Msg = generate_aos_msg(ProcID, <<"return 1">>, Opts),
         {ok, Initialized} =
-        hb_ao:resolve(
-            RawWASMMsg,
-            generate_aos_msg(ProcID, <<"return 1">>),
-            #{}
-        ),
-        Msg = generate_aos_msg(ProcID, <<"return 1+1">>),
+            hb_ao:resolve(
+                RawWASMMsg,
+                Msg,
+                Opts
+            ),
+        Req = generate_aos_msg(ProcID, <<"return 1+1">>, Opts),
         Iterations =
             hb_test_utils:benchmark(
-                fun() -> hb_ao:resolve(Initialized, Msg, #{}) end,
+                fun() -> hb_ao:resolve(Initialized, Req, Opts) end,
                 BenchTime
             ),
         hb_test_utils:benchmark_print(

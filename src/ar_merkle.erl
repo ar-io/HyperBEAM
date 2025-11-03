@@ -46,8 +46,8 @@ validate_path(ID, Dest, RightBound, Path) ->
 
 %% @doc Validate the given merkle path using the given set of rules.
 validate_path(ID, Dest, RightBound, _Path, _Ruleset) when RightBound =< 0 ->
-	?event({error, {validate_path_called_with_non_positive_right_bound, 
-		root, hb_util:encode(ID), dest, Dest, right_bound, RightBound}}),
+    ?event({validate_path_called_with_non_positive_right_bound,
+        {root, hb_util:encode(ID)}, {dest, Dest}, {right_bound, RightBound}}),
 	throw(invalid_right_bound);
 validate_path(ID, Dest, RightBound, Path, Ruleset) when Dest >= RightBound ->
 	validate_path(ID, RightBound - 1, RightBound, Path, Ruleset);

@@ -24,9 +24,19 @@
 -define(DEFAULT_PRINT_OPTS, [error, http_error]).
 -else.
 -define(DEFAULT_PRINT_OPTS,
-    [error, http_error, http_short, compute_short, push_short]
+    [
+        error, http_error, cron_error,
+        http_short, compute_short, push_short, copycat_short
+    ]
 ).
 -endif.
+
+-ifdef(AO_PROFILING).
+-define(DEFAULT_TRACE_TYPE, ao).
+-else.
+-define(DEFAULT_TRACE_TYPE, erlang).
+-endif.
+
 -define(DEFAULT_PRIMARY_STORE, #{
     <<"name">> => <<"cache-mainnet/lmdb">>,
     <<"store-module">> => hb_store_lmdb
@@ -121,9 +131,11 @@ default_message() ->
         %% Preloaded devices for the node to use. These names override
         %% resolution of devices via ID to the default implementations.
         preloaded_devices => [
+            #{<<"name">> => <<"arweave@2.9-pre">>, <<"module">> => dev_arweave},
             #{<<"name">> => <<"apply@1.0">>, <<"module">> => dev_apply},
             #{<<"name">> => <<"auth-hook@1.0">>, <<"module">> => dev_auth_hook},
             #{<<"name">> => <<"ans104@1.0">>, <<"module">> => dev_codec_ans104},
+            #{<<"name">> => <<"tx@1.0">>, <<"module">> => dev_codec_tx},
             #{<<"name">> => <<"compute@1.0">>, <<"module">> => dev_cu},
             #{<<"name">> => <<"cache@1.0">>, <<"module">> => dev_cache},
             #{<<"name">> => <<"cacheviz@1.0">>, <<"module">> => dev_cacheviz},
@@ -139,6 +151,7 @@ default_message() ->
             #{<<"name">> => <<"http-auth@1.0">>, <<"module">> => dev_codec_http_auth},
             #{<<"name">> => <<"hook@1.0">>, <<"module">> => dev_hook},
             #{<<"name">> => <<"hyperbuddy@1.0">>, <<"module">> => dev_hyperbuddy},
+            #{<<"name">> => <<"copycat@1.0">>, <<"module">> => dev_copycat},
             #{<<"name">> => <<"json@1.0">>, <<"module">> => dev_codec_json},
             #{<<"name">> => <<"json-iface@1.0">>, <<"module">> => dev_json_iface},
             #{<<"name">> => <<"local-name@1.0">>, <<"module">> => dev_local_name},
@@ -157,6 +170,7 @@ default_message() ->
             #{<<"name">> => <<"process@1.0">>, <<"module">> => dev_process},
             #{<<"name">> => <<"profile@1.0">>, <<"module">> => dev_profile},
             #{<<"name">> => <<"push@1.0">>, <<"module">> => dev_push},
+            #{<<"name">> => <<"query@1.0">>, <<"module">> => dev_query},
             #{<<"name">> => <<"relay@1.0">>, <<"module">> => dev_relay},
             #{<<"name">> => <<"router@1.0">>, <<"module">> => dev_router},
             #{<<"name">> => <<"scheduler@1.0">>, <<"module">> => dev_scheduler},
@@ -165,8 +179,8 @@ default_message() ->
             #{<<"name">> => <<"stack@1.0">>, <<"module">> => dev_stack},
             #{<<"name">> => <<"structured@1.0">>, <<"module">> => dev_codec_structured},
             #{<<"name">> => <<"test-device@1.0">>, <<"module">> => dev_test},
+            #{<<"name">> => <<"trie@1.0">>, <<"module">> => dev_trie},
             #{<<"name">> => <<"volume@1.0">>, <<"module">> => dev_volume},
-			#{<<"name">> => <<"tx@1.0">>, <<"module">> => dev_codec_tx},
             #{<<"name">> => <<"secret@1.0">>, <<"module">> => dev_secret},
             #{<<"name">> => <<"wasi@1.0">>, <<"module">> => dev_wasi},
             #{<<"name">> => <<"wasm-64@1.0">>, <<"module">> => dev_wasm},
@@ -190,7 +204,7 @@ default_message() ->
         %% HTTP request options
         http_connect_timeout => 5000,
         http_keepalive => 120000,
-        http_request_send_timeout => 60000,
+        http_request_send_timeout => 300_000,
         port => 8734,
         wasm_allow_aot => false,
         %% Options for the relay device
@@ -210,12 +224,14 @@ default_message() ->
         debug_print_indent => 2,
         stack_print_prefixes => ["hb", "dev", "ar", "maps"],
         debug_print_trace => short, % `short` | `false`. Has performance impact.
+        debug_trace_type => ?DEFAULT_TRACE_TYPE,
         short_trace_len => 20,
         debug_metadata => true,
-        debug_ids => true,
+        debug_ids => false,
         debug_committers => true,
         debug_show_priv => if_present,
-        debug_resolve_links => true,
+        debug_resolve_links => false,
+        debug_print_fail_mode => long,
 		trusted => #{},
         snp_enforced_keys => [
             firmware, kernel, 
@@ -234,10 +250,24 @@ default_message() ->
                 <<"node">> => #{ <<"prefix">> => <<"http://localhost:6363">> }
             },
             #{
+                % Routes for the genesis-wasm device to use a local CU, if requested.
+                <<"template">> => <<"/dry-run.*">>,
+                <<"node">> => #{ <<"prefix">> => <<"http://localhost:6363">> }
+            },
+            #{
+                % Routes for the genesis-wasm device to use a local CU, if requested.
+                <<"template">> => <<"/state.*">>,
+                <<"node">> => #{ <<"prefix">> => <<"http://localhost:6363">> }
+            },
+            #{
                 % Routes for GraphQL requests to use a remote GraphQL API.
                 <<"template">> => <<"/graphql">>,
                 <<"nodes">> =>
                     [
+                        #{
+                            <<"prefix">> => <<"https://ao-search-gateway.goldsky.com">>,
+                            <<"opts">> => #{ http_client => httpc, protocol => http2 }
+                        },
                         #{
                             <<"prefix">> => <<"https://arweave-search.goldsky.com">>,
                             <<"opts">> => #{ http_client => httpc, protocol => http2 }
@@ -247,6 +277,16 @@ default_message() ->
                             <<"opts">> => #{ http_client => gun, protocol => http2 }
                         }
                     ]
+            },
+            #{
+                % Routes for Arweave transaction requests to use a remote gateway.
+                <<"template">> => <<"/arweave">>,
+                <<"node">> =>
+                    #{
+                        <<"match">> => <<"^/arweave">>,
+                        <<"with">> => <<"https://arweave.net">>,
+                        <<"opts">> => #{ http_client => httpc, protocol => http2 }
+                    }
             },
             #{
                 % Routes for raw data requests to use a remote gateway.
@@ -321,7 +361,11 @@ default_message() ->
                             #{ <<"device">> => <<"http-auth@1.0">> }
                     }
             }
-        }
+        },
+        genesis_wasm_import_authorities =>
+            [
+                <<"WjnS-s03HWsDSdMnyTdzB1eHZB2QheUWP_FVRVYxkXk">>
+            ]
         % Should the node track and expose prometheus metrics?
         % We do not set this explicitly, so that the hb_features:test() value
         % can be used to determine if we should expose metrics instead,
@@ -498,7 +542,12 @@ load_bin(Device, Bin, Opts) ->
             ok,
             mimic_default_types(
                 hb_cache:ensure_all_loaded(
-                    hb_message:convert(Bin, <<"structured@1.0">>, Device, Opts),
+                    hb_message:convert(
+                        Bin,
+                        <<"structured@1.0">>,
+                        Device,
+                        Opts#{ linkify_mode => false }
+                    ),
                     Opts
                 ),
                 new_atoms,
