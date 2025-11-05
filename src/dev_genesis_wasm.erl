@@ -508,7 +508,8 @@ import_legacy_checkpoint() ->
         priv_wallet => hb:wallet(),
         genesis_wasm_import_authorities =>
             [
-                <<"WjnS-s03HWsDSdMnyTdzB1eHZB2QheUWP_FVRVYxkXk">>
+                <<"WjnS-s03HWsDSdMnyTdzB1eHZB2QheUWP_FVRVYxkXk">>,
+                <<"3P3o-LPDuRV7pP5vyrx5ONrIMheZov0XVHj490z2fGk">> % tom's special wallet
             ]
     },
     % Process with 12 slots
