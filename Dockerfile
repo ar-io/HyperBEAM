@@ -7,7 +7,6 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     ncurses-dev \
     libssl-dev \
-    sudo \
     curl \
     ca-certificates
 
@@ -15,16 +14,16 @@ RUN git clone --depth=1 --branch maint-27 https://github.com/erlang/otp.git && \
     cd otp && \
     ./configure --without-wx --without-debugger --without-observer --without-et && \
     make -j$(nproc) && \
-    sudo make install && \
+    make install && \
     cd .. && rm -rf otp
 
 RUN git clone https://github.com/erlang/rebar3.git && \
     cd rebar3 && \
     ./bootstrap && \
-    sudo mv rebar3 /usr/local/bin/
+    mv rebar3 /usr/local/bin/
 
 # install node 22 (used by genesis_wasm profile)
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && \
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y nodejs=22.16.0-1nodesource1 && \
     node -v && npm -v
 
@@ -49,7 +48,7 @@ RUN apt-get update && apt-get install -y \
     gnupg
 
 # node 22 is still needed for genesis_wasm profile
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && \
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y nodejs=22.16.0-1nodesource1 && \
     node -v && npm -v
 
