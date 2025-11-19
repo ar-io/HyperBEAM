@@ -11,12 +11,12 @@ RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates
 
-RUN git clone https://github.com/erlang/otp.git && \
+RUN git clone --depth=1 --branch maint-27 https://github.com/erlang/otp.git && \
     cd otp && \
-    git checkout maint-27 && \
-    ./configure && \
-    make -j16 && \
-    sudo make install
+    ./configure --without-wx --without-debugger --without-observer --without-et && \
+    make -j$(nproc) && \
+    sudo make install && \
+    cd .. && rm -rf otp
 
 RUN git clone https://github.com/erlang/rebar3.git && \
     cd rebar3 && \
@@ -24,9 +24,9 @@ RUN git clone https://github.com/erlang/rebar3.git && \
     sudo mv rebar3 /usr/local/bin/
 
 # install node 22 (used by genesis_wasm profile)
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
-    apt-get install -y nodejs && \
-    node --version
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && \
+    apt-get install -y nodejs=22.16.0-1nodesource1 && \
+    node -v && npm -v
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
@@ -49,9 +49,9 @@ RUN apt-get update && apt-get install -y \
     gnupg
 
 # node 22 is still needed for genesis_wasm profile
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
-    apt-get install -y nodejs && \
-    node --version
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && \
+    apt-get install -y nodejs=22.16.0-1nodesource1 && \
+    node -v && npm -v
 
 # copy the build artifacts from the builder stage
 COPY --from=builder /opt/_build/ /opt/_build/
